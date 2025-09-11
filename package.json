@@ -9,7 +9,11 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@huggingface/inference": "^4.8.0",
+    "@huggingface/transformers": "^3.7.2",
+    "@node-llama-cpp/mac-x64": "^3.13.0",
     "axios": "^1.11.0",
+    "cosine-similarity": "^1.0.1",
     "next": "15.5.2",
     "react": "19.1.0",
     "react-dom": "19.1.0"
