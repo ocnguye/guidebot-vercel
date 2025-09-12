@@ -32,16 +32,21 @@ export default function Chat() {
   const handleSend = async () => {
     if (!input.trim()) return;
 
+    const userInput = input.trim();
+    
+    // Clear input immediately after submission
+    setInput("");
+
     // Add user message
     const newMessages = [
       ...messages,
-      { role: "user" as "user", text: input }
+      { role: "user" as "user", text: userInput }
     ];
     setMessages(newMessages);
     setLoading(true);
 
     try {
-      const botResponse = await askGuideBot(input);
+      const botResponse = await askGuideBot(userInput);
       setMessages([...newMessages, { role: "bot", text: botResponse }]);
     } catch (err: any) {
       setMessages([
@@ -49,52 +54,68 @@ export default function Chat() {
         { role: "bot", text: `Error: ${err.message}` },
       ]);
     } finally {
-      setInput("");
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col h-full max-w-2xl mx-auto p-4 border rounded-lg shadow-md bg-white">
-      {/* Chat history */}
-      <div className="flex-1 overflow-y-auto mb-4 space-y-2">
-        {messages.map((msg, idx) => (
-          <div
-            key={idx}
-            className={`p-2 rounded-md max-w-[80%] ${
-              msg.role === "user"
-                ? "bg-blue-500 text-white self-end ml-auto"
-                : "bg-gray-200 text-black self-start"
-            }`}
-          >
-            {msg.text}
-          </div>
-        ))}
-        {loading && (
-          <div className="p-2 rounded-md max-w-[80%] bg-gray-200 self-start animate-pulse">
-            GuideBot is typing...
-          </div>
-        )}
-      </div>
+    <div className="flex flex-col h-screen bg-purple-100 p-4">
+      <div className="flex flex-col h-full max-w-4xl mx-auto w-full bg-white rounded-lg shadow-lg overflow-hidden">
+        {/* Chat history */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {messages.length === 0 && (
+            <div className="text-center text-gray-500 mt-8">
+              Start a conversation by asking about a procedure...
+            </div>
+          )}
+          {messages.map((msg, idx) => (
+            <div
+              key={idx}
+              className={`flex ${
+                msg.role === "user" ? "justify-end" : "justify-start"
+              }`}
+            >
+              <div
+                className={`p-3 rounded-lg max-w-[80%] ${
+                  msg.role === "user"
+                    ? "bg-blue-500 text-white"
+                    : "bg-gray-100 text-gray-800 border"
+                }`}
+              >
+                {msg.text}
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div className="flex justify-start">
+              <div className="p-3 rounded-lg max-w-[80%] bg-gray-100 text-gray-600 border animate-pulse">
+                GuideBot is typing...
+              </div>
+            </div>
+          )}
+        </div>
 
-      {/* Input bar */}
-      <div className="flex">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSend()}
-          className="flex-1 p-2 border rounded-l-md focus:outline-none"
-          placeholder="Ask about a procedure..."
-          disabled={loading}
-        />
-        <button
-          onClick={handleSend}
-          className="bg-blue-600 text-white px-4 rounded-r-md hover:bg-blue-700 disabled:opacity-50"
-          disabled={loading}
-        >
-          Send
-        </button>
+        {/* Input bar */}
+        <div className="border-t bg-gray-50 p-4">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-800"
+              placeholder="Ask about a procedure..."
+              disabled={loading}
+            />
+            <button
+              onClick={handleSend}
+              className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              disabled={loading}
+            >
+              Send
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
