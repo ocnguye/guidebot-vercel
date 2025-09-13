@@ -12,7 +12,7 @@ env.cacheDir = './.cache/transformers';
 interface ParsedReport {
   ContentText?: string;
   text?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface ScoredReport extends Report {
@@ -26,6 +26,13 @@ interface TensorOutput {
   size: number;
 }
 
+interface EmbeddingModel {
+  (input: string | string[], options?: {
+    pooling?: string;
+    normalize?: boolean;
+  }): Promise<TensorOutput>;
+}
+
 // Set up Hugging Face authentication
 const setupHFAuth = (): boolean => {
   const token: string | undefined = process.env.GUIDEBOT_TOKEN;
@@ -34,7 +41,6 @@ const setupHFAuth = (): boolean => {
     console.warn("No Hugging Face token found. Model loading may fail.");
     return false;
   }
-
 
   // Override fetch to add proper authorization headers
   const originalFetch = globalThis.fetch;
@@ -61,7 +67,7 @@ export interface Report {
 }
 
 let reports: Report[] = [];
-let embeddingsModel: any = null;
+let embeddingsModel: EmbeddingModel | null = null;
 let isLoaded: boolean = false;
 
 /**
@@ -102,8 +108,9 @@ export const loadReports = async (): Promise<void> => {
             text: text.trim(), 
             embedding: [] 
           };
-        } catch (err: any) {
-          console.error(`Failed to parse line ${index}:`, err.message);
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+          console.error(`Failed to parse line ${index}:`, errorMessage);
           return null;
         }
       })
@@ -115,15 +122,17 @@ export const loadReports = async (): Promise<void> => {
     console.log("Initializing embeddings model...");
     
     try {
-      embeddingsModel = await pipeline(
+      const model = await pipeline(
         'feature-extraction', 
         'Xenova/all-MiniLM-L6-v2'
       );
       
+      embeddingsModel = model as EmbeddingModel;
       console.log("Embeddings model loaded successfully");
-    } catch (modelError: any) {
-      console.error("Failed to load embeddings model:", modelError);
-      throw new Error(`Embeddings model loading failed: ${modelError.message}`);
+    } catch (modelError: unknown) {
+      const errorMessage = modelError instanceof Error ? modelError.message : 'Unknown error';
+      console.error("Failed to load embeddings model:", errorMessage);
+      throw new Error(`Embeddings model loading failed: ${errorMessage}`);
     }
 
     // Generate embeddings for each report using batch processing
@@ -140,6 +149,10 @@ export const loadReports = async (): Promise<void> => {
         const sentences: string[] = batch.map(report => report.text);
         
         // Get embeddings for the entire batch
+        if (!embeddingsModel) {
+          throw new Error("Embeddings model not initialized");
+        }
+        
         const batchEmbeddings: TensorOutput = await embeddingsModel(sentences, {
           pooling: 'mean',
           normalize: true
@@ -159,8 +172,9 @@ export const loadReports = async (): Promise<void> => {
           console.log(`Generated embeddings: ${processed}/${reports.length}`);
         }
         
-      } catch (embError: any) {
-        console.error(`Failed to generate embeddings for batch starting at ${i}:`, embError);
+      } catch (embError: unknown) {
+        const errorMessage = embError instanceof Error ? embError.message : 'Unknown error';
+        console.error(`Failed to generate embeddings for batch starting at ${i}:`, errorMessage);
         // Set empty embeddings for failed batch
         for (const report of batch) {
           report.embedding = [];
@@ -178,8 +192,9 @@ export const loadReports = async (): Promise<void> => {
     isLoaded = true;
     console.log("Reports loading completed successfully");
 
-  } catch (error: any) {
-    console.error("Failed to load reports:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error("Failed to load reports:", errorMessage);
     throw error;
   }
 };
@@ -233,8 +248,9 @@ export const retrieveRelevantReports = async (query: string, topK: number = 3): 
     
     return topResults;
 
-  } catch (error: any) {
-    console.error("Search failed:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error("Search failed:", errorMessage);
     throw error;
   }
 };

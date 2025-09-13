@@ -7,7 +7,12 @@ interface Message {
   text: string;
 }
 
-async function askGuideBot(query: string) {
+interface ApiResponse {
+  result: string;
+  error?: string;
+}
+
+async function askGuideBot(query: string): Promise<string> {
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -19,8 +24,8 @@ async function askGuideBot(query: string) {
     throw new Error(`API error: ${res.status} - ${errorText}`);
   }
 
-  const data = await res.json();
-  console.log("API response data:", data); // 🔹 add this
+  const data: ApiResponse = await res.json();
+  console.log("API response data:", data); // 📹 add this
   return data.result; // ensure it's data.result, not data itself
 }
 
@@ -40,7 +45,7 @@ export default function Chat() {
     // Add user message
     const newMessages = [
       ...messages,
-      { role: "user" as "user", text: userInput }
+      { role: "user" as const, text: userInput }
     ];
     setMessages(newMessages);
     setLoading(true);
@@ -48,10 +53,11 @@ export default function Chat() {
     try {
       const botResponse = await askGuideBot(userInput);
       setMessages([...newMessages, { role: "bot", text: botResponse }]);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       setMessages([
         ...newMessages,
-        { role: "bot", text: `Error: ${err.message}` },
+        { role: "bot", text: `Error: ${errorMessage}` },
       ]);
     } finally {
       setLoading(false);

@@ -12,6 +12,22 @@ interface MedicalModel {
   description: string;
 }
 
+interface ChatCompletionInputMessage {
+  role: string;
+  content: string;
+  [key: string]: unknown;
+}
+
+interface ChatCompletionChoice {
+  message?: {
+    content?: string;
+  };
+}
+
+interface ChatCompletionResponse {
+  choices: ChatCompletionChoice[];
+}
+
 // Globals
 let hf: HfInference | null = null;
 let initialized: boolean = false;
@@ -35,23 +51,23 @@ const initHFInference = (): boolean => {
     hf = new HfInference(token);
     console.log("Hugging Face Inference API initialized");
     return true;
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to initialize HF Inference:", error);
     return false;
   }
 };
 
 // Create system and user messages for chat completion
-function createChatMessages(query: string, context: string) {
+function createChatMessages(query: string, context: string): ChatCompletionInputMessage[] {
   const limitedContext = context.substring(0, 2000);
-  
+
   return [
     {
-      role: "system" as const,
+      role: "system",
       content: "You are GuideBot, a radiology assistant. Use ONLY the context provided to answer questions. If you're unsure or the context doesn't contain the answer, say you don't know. Be precise and medical in your responses."
     },
     {
-      role: "user" as const,
+      role: "user",
       content: `Context:
 ${limitedContext}
 
@@ -61,7 +77,7 @@ Question: ${query}`
 }
 
 // Generate response using Qwen3 via chat completion
-async function generateWithQwen3(messages: any[], model: MedicalModel): Promise<string> {
+async function generateWithQwen3(messages: ChatCompletionInputMessage[], model: MedicalModel): Promise<string> {
   if (!hf) throw new Error("HF Inference not initialized");
 
   try {
@@ -74,12 +90,13 @@ async function generateWithQwen3(messages: any[], model: MedicalModel): Promise<
       temperature: 0.1, // Low temperature for medical accuracy
       top_p: 0.9,
       stop: ["Question:", "Context:", "Human:", "User:"]
-    });
+    }) as ChatCompletionResponse;
     
     return response.choices[0]?.message?.content || "";
     
-  } catch (error: any) {
-    console.error(`Generation failed with ${model.name}:`, error.message);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Generation failed with ${model.name}:`, errorMessage);
     throw error;
   }
 }
@@ -112,8 +129,9 @@ const init = async (): Promise<void> => {
     initialized = true;
     console.log("Medical AI System initialized with Qwen3-Next-80B-A3B-Instruct");
     
-  } catch (error: any) {
-    console.error("Initialization failed:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error("Initialization failed:", errorMessage);
     throw error;
   }
 };
@@ -137,10 +155,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     let contextText = "";
     try {
       const relevantReports = await retrieveRelevantReports(query, 3);
-      contextText = relevantReports.map((r: any) => r.text).join("\n\n");
+      contextText = relevantReports.map((r: { text: string }) => r.text).join("\n\n");
       console.log(`Retrieved ${relevantReports.length} relevant medical reports`);
-    } catch (reportsError: any) {
-      console.warn("Reports retrieval failed:", reportsError.message);
+    } catch (reportsError: unknown) {
+      const errorMessage = reportsError instanceof Error ? reportsError.message : 'Unknown error';
+      console.warn("Reports retrieval failed:", errorMessage);
       // Continue without context rather than failing
     }
 
@@ -178,42 +197,44 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         model_used: model.name
       });
       
-    } catch (generationError: any) {
-      console.error("Qwen3 generation failed:", generationError.message);
+    } catch (generationError: unknown) {
+      const errorMessage = generationError instanceof Error ? generationError.message : 'Unknown error';
+      console.error("Qwen3 generation failed:", errorMessage);
       
       // Provide more specific error handling for Qwen3
-      if (generationError.message.includes('overloaded') || generationError.message.includes('currently loading')) {
+      if (errorMessage.includes('overloaded') || errorMessage.includes('currently loading')) {
         return NextResponse.json({ 
           result: "The Qwen3 model is currently overloaded or loading. Please try again in a few moments."
         });
-      } else if (generationError.message.includes('timeout')) {
+      } else if (errorMessage.includes('timeout')) {
         return NextResponse.json({ 
           result: "The request timed out. Please try with a shorter question."
         });
-      } else if (generationError.message.includes('rate limit')) {
+      } else if (errorMessage.includes('rate limit')) {
         return NextResponse.json({ 
           result: "Rate limit exceeded. Please wait before making another request."
         });
-      } else if (generationError.message.includes('no inference providers') || generationError.message.includes('not available')) {
+      } else if (errorMessage.includes('no inference providers') || errorMessage.includes('not available')) {
         return NextResponse.json({ 
           result: "The Qwen3 model is not currently available on the free tier. This 80B model likely requires a Pro account or paid inference endpoints."
         });
-      } else if (generationError.message.includes('conversational')) {
+      } else if (errorMessage.includes('conversational')) {
         return NextResponse.json({ 
           result: "The model requires conversational API access. This indicates the model may not be available through the current inference method."
         });
       } else {
         return NextResponse.json({ 
-          error: `Model generation failed: ${generationError.message}`
+          error: `Model generation failed: ${errorMessage}`
         }, { status: 500 });
       }
     }
 
-  } catch (err: any) {
-    console.error("API error:", err);
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+    console.error("API error:", errorMessage);
     
     return NextResponse.json({ 
-      error: `Failed to process medical query: ${err.message}`
+      error: `Failed to process medical query: ${errorMessage}`
     }, { status: 500 });
   }
 }
