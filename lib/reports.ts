@@ -1,23 +1,15 @@
-import fs from "fs";
-import path from "path";
+// lib/reports.ts
 import { HfInference } from "@huggingface/inference";
 import cosineSimilarity from "cosine-similarity";
 
-// Type definitions
-interface ParsedReport {
-  ContentText?: string;
-  text?: string;
-  [key: string]: unknown;
+interface Report {
+  id: number;
+  text: string;
+  embedding: number[];
 }
 
 interface ScoredReport extends Report {
   score: number;
-}
-
-export interface Report {
-  id: number;
-  text: string;
-  embedding: number[];
 }
 
 let reports: Report[] = [];
@@ -25,7 +17,7 @@ let hfClient: HfInference | null = null;
 let isLoaded: boolean = false;
 
 /**
- * Initialize Hugging Face client
+ * Initialize HF client for query embeddings only
  */
 const initializeHFClient = (): boolean => {
   const token = process.env.HF_TOKEN || process.env.GUIDEBOT_TOKEN || process.env.HUGGINGFACE_API_KEY;
@@ -36,14 +28,13 @@ const initializeHFClient = (): boolean => {
   }
 
   hfClient = new HfInference(token);
-  console.log("Hugging Face client initialized for embeddings");
   return true;
 };
 
 /**
- * Generate embeddings using HF Inference API
+ * Generate embedding for query using HF Inference API
  */
-const generateEmbedding = async (text: string): Promise<number[]> => {
+const generateQueryEmbedding = async (text: string): Promise<number[]> => {
   if (!hfClient) {
     throw new Error("HF client not initialized");
   }
@@ -54,17 +45,16 @@ const generateEmbedding = async (text: string): Promise<number[]> => {
       inputs: text
     });
 
-    // HF API returns embeddings as nested arrays, flatten if needed
     const embedding = Array.isArray(response[0]) ? response[0] : response;
     return embedding as number[];
   } catch (error) {
-    console.error('Failed to generate embedding:', error);
+    console.error('Failed to generate query embedding:', error);
     throw error;
   }
 };
 
 /**
- * Load reports from JSONL and generate embeddings using HF Inference API
+ * Load pre-generated embeddings - FAST!
  */
 export const loadReports = async (): Promise<void> => {
   if (isLoaded) {
@@ -72,97 +62,46 @@ export const loadReports = async (): Promise<void> => {
     return;
   }
 
+  const startTime = Date.now();
+
   try {
-    // Initialize HF client
+    // Initialize HF client for queries
     if (!initializeHFClient()) {
       throw new Error("Failed to initialize Hugging Face client");
     }
 
-    // Load the JSONL file
-    const filePath: string = path.join(process.cwd(), "IRReports_DEID.jsonl");
+    console.log("Loading pre-generated embeddings...");
     
-    if (!fs.existsSync(filePath)) {
-      throw new Error(`Reports file not found: ${filePath}`);
-    }
-
-    console.log(`Loading reports from: ${filePath}`);
-    const lines: string[] = fs.readFileSync(filePath, "utf-8").split("\n").filter(Boolean);
-
-    reports = lines
-      .map((line: string, index: number): Report | null => {
-        try {
-          const obj: ParsedReport = JSON.parse(line);
-          const text: string = obj.ContentText || obj.text || "";
-          if (!text.trim()) return null;
-          
-          return { 
-            id: index, 
-            text: text.trim(), 
-            embedding: [] 
-          };
-        } catch (err: unknown) {
-          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-          console.error(`Failed to parse line ${index}:`, errorMessage);
-          return null;
-        }
-      })
-      .filter((report): report is Report => report !== null);
-
-    console.log(`Loaded ${reports.length} reports from file`);
-
-    // Generate embeddings using HF Inference API
-    console.log("Generating embeddings using Hugging Face Inference API...");
+    // Try to load from public folder first (for production)
+    let embeddingsData: string;
     
-    let processed = 0;
-    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-    for (const report of reports) {
-      try {
-        // Add small delay to avoid rate limiting
-        if (processed > 0 && processed % 10 === 0) {
-          await delay(1000); // 1 second delay every 10 requests
-        }
-
-        const embedding = await generateEmbedding(report.text);
-        report.embedding = embedding;
-        processed++;
-
-        if (processed % 50 === 0 || processed === reports.length) {
-          console.log(`Generated embeddings: ${processed}/${reports.length}`);
-        }
-
-      } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        console.error(`Failed to generate embedding for report ${report.id}:`, errorMessage);
-        
-        // If it's a rate limit error, wait longer
-        if (errorMessage.includes('rate') || errorMessage.includes('429')) {
-          console.log('Rate limited, waiting 5 seconds...');
-          await delay(5000);
-          // Retry once
-          try {
-            const embedding = await generateEmbedding(report.text);
-            report.embedding = embedding;
-            processed++;
-          } catch (retryError) {
-            console.error(`Retry failed for report ${report.id}`);
-            report.embedding = [];
-          }
-        } else {
-          report.embedding = [];
-        }
+    try {
+      // In production, load from public folder
+      const response = await fetch(`${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : ''}/embeddings.json`);
+      if (response.ok) {
+        embeddingsData = await response.text();
+      } else {
+        throw new Error('Not found in public folder');
+      }
+    } catch {
+      // Fallback: try to load from file system (development)
+      const fs = await import('fs');
+      const path = await import('path');
+      const filePath = path.join(process.cwd(), 'public', 'embeddings.json');
+      
+      if (fs.existsSync(filePath)) {
+        embeddingsData = fs.readFileSync(filePath, 'utf-8');
+      } else {
+        throw new Error('Pre-generated embeddings not found. Run: npm run build-embeddings');
       }
     }
-
-    const successfulEmbeddings: number = reports.filter((r: Report) => r.embedding.length > 0).length;
-    console.log(`Successfully generated ${successfulEmbeddings}/${reports.length} embeddings`);
     
-    if (successfulEmbeddings === 0) {
-      throw new Error("Failed to generate any embeddings");
-    }
-
+    reports = JSON.parse(embeddingsData);
+    
+    const loadTime = Date.now() - startTime;
+    console.log(`✅ Loaded ${reports.length} reports with embeddings in ${loadTime}ms`);
+    
     isLoaded = true;
-    console.log("Reports loading completed successfully");
 
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -172,7 +111,7 @@ export const loadReports = async (): Promise<void> => {
 };
 
 /**
- * Retrieve top-k relevant reports for a query using HF Inference API
+ * Retrieve relevant reports - FAST!
  */
 export const retrieveRelevantReports = async (query: string, topK: number = 3): Promise<Report[]> => {
   if (!isLoaded) {
@@ -183,35 +122,33 @@ export const retrieveRelevantReports = async (query: string, topK: number = 3): 
     throw new Error("HF client not available");
   }
 
+  const startTime = Date.now();
+
   try {
-    console.log(`Searching for: "${query}"`);
+    console.log(`🔍 Searching for: "${query}"`);
     
-    // Generate embedding for the query using HF API
-    const queryEmbedding = await generateEmbedding(query);
+    // Generate embedding for query only (fast)
+    const queryEmbedding = await generateQueryEmbedding(query);
     
-    // Calculate similarity with all reports that have embeddings
-    const validReports: Report[] = reports.filter((r: Report) => r.embedding.length > 0);
+    // Calculate similarities (very fast - just math)
+    const validReports = reports.filter(r => r.embedding && r.embedding.length > 0);
     
     if (validReports.length === 0) {
       throw new Error("No reports with valid embeddings found");
     }
     
-    const scored: ScoredReport[] = validReports.map((r: Report): ScoredReport => {
-      const similarity: number = cosineSimilarity(queryEmbedding, r.embedding);
-      return {
-        ...r,
-        score: similarity
-      };
+    const scored: ScoredReport[] = validReports.map((r): ScoredReport => {
+      const similarity = cosineSimilarity(queryEmbedding, r.embedding);
+      return { ...r, score: similarity };
     });
 
-    // Sort by similarity score (descending)
-    scored.sort((a: ScoredReport, b: ScoredReport) => b.score - a.score);
+    // Sort and get top results
+    scored.sort((a, b) => b.score - a.score);
+    const topResults = scored.slice(0, topK);
     
-    const topResults: ScoredReport[] = scored.slice(0, topK);
-    
-    console.log(`Found ${topResults.length} relevant reports with scores:`, 
-      topResults.map((r: ScoredReport) => ({ id: r.id, score: r.score.toFixed(3) }))
-    );
+    const searchTime = Date.now() - startTime;
+    console.log(`✅ Found ${topResults.length} relevant reports in ${searchTime}ms`);
+    console.log('Top scores:', topResults.map(r => ({ id: r.id, score: r.score.toFixed(3) })));
     
     return topResults;
 
@@ -222,19 +159,10 @@ export const retrieveRelevantReports = async (query: string, topK: number = 3): 
   }
 };
 
-// Helper function to check if reports are loaded
-export const areReportsLoaded = (): boolean => {
-  return isLoaded;
-};
-
-// Helper function to get report count
-export const getReportCount = (): number => {
-  return reports.length;
-};
-
-// Helper function to get embedding statistics
-export const getEmbeddingStats = (): { total: number; withEmbeddings: number; embeddingDim: number } => {
-  const withEmbeddings = reports.filter(r => r.embedding.length > 0);
+export const areReportsLoaded = (): boolean => isLoaded;
+export const getReportCount = (): number => reports.length;
+export const getEmbeddingStats = () => {
+  const withEmbeddings = reports.filter(r => r.embedding && r.embedding.length > 0);
   return {
     total: reports.length,
     withEmbeddings: withEmbeddings.length,
