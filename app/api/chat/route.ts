@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { HfInference } from "@huggingface/inference";
-import { loadReports, retrieveRelevantReports } from "@/lib/reports";
+import { loadReports, retrieveRelevantReports } from "../../../lib/reports";
 
 // Types
 interface RequestBody {
@@ -48,7 +48,7 @@ function createChatMessages(query: string, context: string) {
   return [
     {
       role: "system" as const,
-      content: "You are GuideBot, a interventional radiology assistant. Use the context provided to answer user queries. Be precise and medical in your responses. Format steps and equipment as numbered or dashed lists."
+      content: "You are GuideBot, a radiology assistant. Use the context provided to answer questions, formatting steps and equipment as numbered or dashed lists. Be concise and brief in your responses."
     },
     {
       role: "user" as const,
@@ -70,7 +70,7 @@ async function generateWithQwen3(messages: any[], model: MedicalModel): Promise<
     const response = await hf.chatCompletion({
       model: model.name,
       messages: messages,
-      max_tokens: 400,
+      max_tokens: 800,
       temperature: 0.1, // Low temperature for medical accuracy
       top_p: 0.9,
       stop: ["Question:", "Context:", "Human:", "User:"]
@@ -88,10 +88,14 @@ async function generateWithQwen3(messages: any[], model: MedicalModel): Promise<
 function cleanResponse(response: string): string {
   return response
     .trim()
-    .replace(/^(Answer:|Response:)\s*/i, '') // Remove answer prefixes
+    .replace(/^(Answer:|Response:|Assistant:|AI:)\s*/i, '') // Remove answer prefixes
     .replace(/\n{3,}/g, '\n\n') // Limit consecutive line breaks
     .replace(/^\s*[\-\*]\s*/, '') // Remove leading bullet points
-    .replace(/^(Assistant|Model):\s*/i, '') // Remove model prefixes
+    .replace(/^(Assistant|Model|GuideBot):\s*/i, '') // Remove model prefixes
+    // Keep markdown formatting for lists and structure
+    .replace(/\*\*(.*?)\*\*/g, '**$1**') // Preserve bold formatting
+    .replace(/^\s*\d+\.\s/gm, '$&') // Preserve numbered lists
+    .replace(/^\s*-\s/gm, '$&') // Preserve bullet points
     .trim();
 }
 

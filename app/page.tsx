@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ReactMarkdown from 'react-markdown';
 
 interface Message {
   role: "user" | "bot";
@@ -25,8 +26,8 @@ async function askGuideBot(query: string): Promise<string> {
   }
 
   const data: ApiResponse = await res.json();
-  console.log("API response data:", data); // 📹 add this
-  return data.result; // ensure it's data.result, not data itself
+  console.log("API response data:", data);
+  return data.result;
 }
 
 export default function Chat() {
@@ -88,7 +89,46 @@ export default function Chat() {
                     : "bg-gray-100 text-gray-800 border"
                 }`}
               >
-                {msg.text}
+                {msg.role === "bot" ? (
+                  <div className="prose prose-sm max-w-none">
+                    <ReactMarkdown 
+                      components={{
+                        // Style numbered lists
+                        ol: (props: React.ComponentPropsWithoutRef<'ol'>) => (
+                          <ol className="list-decimal list-inside space-y-2 my-2" {...props}>
+                            {props.children}
+                          </ol>
+                        ),
+                        // Style bullet lists  
+                        ul: (props: React.ComponentPropsWithoutRef<'ul'>) => (
+                          <ul className="list-disc list-inside space-y-1 my-2 ml-4" {...props}>
+                            {props.children}
+                          </ul>
+                        ),
+                        // Style list items
+                        li: (props: React.ComponentPropsWithoutRef<'li'>) => (
+                          <li className="leading-relaxed" {...props}>{props.children}</li>
+                        ),
+                        // Style bold text
+                        strong: (props: React.ComponentPropsWithoutRef<'strong'>) => (
+                          <strong className="font-bold text-gray-900" {...props}>{props.children}</strong>
+                        ),
+                        // Style paragraphs
+                        p: (props: React.ComponentPropsWithoutRef<'p'>) => (
+                          <p className="mb-2 leading-relaxed" {...props}>{props.children}</p>
+                        ),
+                        // Style headings
+                        h3: (props: React.ComponentPropsWithoutRef<'h3'>) => (
+                          <h3 className="font-bold text-lg mb-2 mt-3" {...props}>{props.children}</h3>
+                        )
+                      }}
+                    >
+                      {msg.text}
+                    </ReactMarkdown>
+                  </div>
+                ) : (
+                  msg.text
+                )}
               </div>
             </div>
           ))}

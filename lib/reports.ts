@@ -1,4 +1,3 @@
-// lib/reports.ts
 import { HfInference } from "@huggingface/inference";
 import cosineSimilarity from "cosine-similarity";
 
