@@ -1,9 +1,9 @@
 import fs from "fs";
 import path from "path";
-import { pipeline, env } from '@huggingface/transformers';
+import { pipeline, env } from '@xenova/transformers';
 import cosineSimilarity from "cosine-similarity";
 
-// Configure transformers environment properly
+// Configure transformers environment for Xenova
 env.allowRemoteModels = true;
 env.allowLocalModels = false;
 env.cacheDir = './.cache/transformers';
@@ -19,46 +19,18 @@ interface ScoredReport extends Report {
   score: number;
 }
 
-interface TensorOutput {
-  dims: number[];
-  type: string;
+// Xenova returns different tensor structure
+interface XenovaTensor {
   data: Float32Array;
-  size: number;
+  dims: number[];
 }
 
 interface EmbeddingModel {
   (input: string | string[], options?: {
     pooling?: string;
     normalize?: boolean;
-  }): Promise<TensorOutput>;
+  }): Promise<XenovaTensor>;
 }
-
-// Set up Hugging Face authentication
-const setupHFAuth = (): boolean => {
-  const token: string | undefined = process.env.GUIDEBOT_TOKEN;
-  
-  if (!token) {
-    console.warn("No Hugging Face token found. Model loading may fail.");
-    return false;
-  }
-
-  // Override fetch to add proper authorization headers
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (url: RequestInfo | URL, options: RequestInit = {}): Promise<Response> => {
-    if (typeof url === 'string' && url.includes('huggingface.co')) {
-      const headers = new Headers(options.headers);
-      headers.set('Authorization', `Bearer ${token}`);
-      headers.set('User-Agent', 'transformers.js');
-      options.headers = headers;
-      
-      console.log(`Authenticated request to: ${url}`);
-    }
-    return originalFetch(url, options);
-  };
-  
-  console.log("Hugging Face authentication configured");
-  return true;
-};
 
 export interface Report {
   id: number;
@@ -71,7 +43,7 @@ let embeddingsModel: EmbeddingModel | null = null;
 let isLoaded: boolean = false;
 
 /**
- * Load reports from JSONL and generate embeddings using proper transformers API
+ * Load reports from JSONL and generate embeddings using Xenova transformers
  */
 export const loadReports = async (): Promise<void> => {
   if (isLoaded) {
@@ -80,12 +52,6 @@ export const loadReports = async (): Promise<void> => {
   }
 
   try {
-    // Setup authentication
-    const hasToken: boolean = setupHFAuth();
-    if (!hasToken) {
-      throw new Error("Hugging Face token is required. Please set GUIDEBOT_TOKEN in your .env.local file");
-    }
-
     // Load the JSONL file
     const filePath: string = path.join(process.cwd(), "IRReports_DEID.jsonl");
     
@@ -118,63 +84,74 @@ export const loadReports = async (): Promise<void> => {
 
     console.log(`Loaded ${reports.length} reports from file`);
 
-    // Initialize embedding model using correct API
-    console.log("Initializing embeddings model...");
+    // Initialize embedding model using Xenova
+    console.log("Initializing Xenova embeddings model...");
     
     try {
+      // Use Xenova's pipeline - it handles downloading and caching automatically
       const model = await pipeline(
         'feature-extraction', 
-        'Xenova/all-MiniLM-L6-v2'
+        'Xenova/all-MiniLM-L6-v2',
+        { 
+          quantized: false, // Set to true for smaller model size, false for better accuracy
+          progress_callback: (data: any) => {
+            if (data.status === 'downloading') {
+              console.log(`Downloading model: ${data.name} - ${Math.round(data.progress)}%`);
+            } else if (data.status === 'loading') {
+              console.log(`Loading model: ${data.name}`);
+            }
+          }
+        }
       );
       
       embeddingsModel = model as EmbeddingModel;
-      console.log("Embeddings model loaded successfully");
+      console.log("Xenova embeddings model loaded successfully");
     } catch (modelError: unknown) {
       const errorMessage = modelError instanceof Error ? modelError.message : 'Unknown error';
-      console.error("Failed to load embeddings model:", errorMessage);
+      console.error("Failed to load Xenova embeddings model:", errorMessage);
       throw new Error(`Embeddings model loading failed: ${errorMessage}`);
     }
 
     // Generate embeddings for each report using batch processing
     console.log("Generating embeddings for all reports...");
     
-    const batchSize: number = 10; // Process in batches to avoid memory issues
+    const batchSize: number = 5; // Smaller batch size for Xenova to avoid memory issues
     let processed: number = 0;
     
     for (let i = 0; i < reports.length; i += batchSize) {
       const batch: Report[] = reports.slice(i, i + batchSize);
       
       try {
-        // Prepare batch of sentences
-        const sentences: string[] = batch.map(report => report.text);
-        
-        // Get embeddings for the entire batch
         if (!embeddingsModel) {
           throw new Error("Embeddings model not initialized");
         }
         
-        const batchEmbeddings: TensorOutput = await embeddingsModel(sentences, {
-          pooling: 'mean',
-          normalize: true
-        });
-        
-        // Extract embeddings for each report in the batch
-        const embeddingDim: number = batchEmbeddings.dims[1]; // Should be 384 for all-MiniLM-L6-v2
-        
-        for (let j = 0; j < batch.length; j++) {
-          const startIdx: number = j * embeddingDim;
-          const endIdx: number = startIdx + embeddingDim;
-          batch[j].embedding = Array.from(batchEmbeddings.data.slice(startIdx, endIdx));
-          processed++;
+        // Process each text individually with Xenova (more reliable)
+        for (const report of batch) {
+          try {
+            const embedding: XenovaTensor = await embeddingsModel(report.text, {
+              pooling: 'mean',
+              normalize: true
+            });
+            
+            // Convert tensor data to array
+            report.embedding = Array.from(embedding.data);
+            processed++;
+            
+          } catch (singleError: unknown) {
+            const errorMessage = singleError instanceof Error ? singleError.message : 'Unknown error';
+            console.error(`Failed to generate embedding for report ${report.id}:`, errorMessage);
+            report.embedding = [];
+          }
         }
         
-        if (processed % 50 === 0 || processed === reports.length) {
+        if (processed % 25 === 0 || processed === reports.length) {
           console.log(`Generated embeddings: ${processed}/${reports.length}`);
         }
         
-      } catch (embError: unknown) {
-        const errorMessage = embError instanceof Error ? embError.message : 'Unknown error';
-        console.error(`Failed to generate embeddings for batch starting at ${i}:`, errorMessage);
+      } catch (batchError: unknown) {
+        const errorMessage = batchError instanceof Error ? batchError.message : 'Unknown error';
+        console.error(`Failed to process batch starting at ${i}:`, errorMessage);
         // Set empty embeddings for failed batch
         for (const report of batch) {
           report.embedding = [];
@@ -200,7 +177,7 @@ export const loadReports = async (): Promise<void> => {
 };
 
 /**
- * Retrieve top-k relevant reports for a query using proper embeddings API
+ * Retrieve top-k relevant reports for a query using Xenova embeddings
  */
 export const retrieveRelevantReports = async (query: string, topK: number = 3): Promise<Report[]> => {
   if (!isLoaded) {
@@ -214,13 +191,13 @@ export const retrieveRelevantReports = async (query: string, topK: number = 3): 
   try {
     console.log(`Searching for: "${query}"`);
     
-    // Generate embedding for the query using correct API
-    const queryEmbeddings: TensorOutput = await embeddingsModel([query], {
+    // Generate embedding for the query using Xenova
+    const queryEmbedding: XenovaTensor = await embeddingsModel(query, {
       pooling: 'mean',
       normalize: true
     });
     
-    const queryVector: number[] = Array.from(queryEmbeddings.data);
+    const queryVector: number[] = Array.from(queryEmbedding.data);
     
     // Calculate similarity with all reports that have embeddings
     const validReports: Report[] = reports.filter((r: Report) => r.embedding.length > 0);
@@ -273,4 +250,17 @@ export const getEmbeddingStats = (): { total: number; withEmbeddings: number; em
     withEmbeddings: withEmbeddings.length,
     embeddingDim: withEmbeddings.length > 0 ? withEmbeddings[0].embedding.length : 0
   };
+};
+
+// Optional: Add a function to clear cache if needed
+export const clearModelCache = (): void => {
+  try {
+    const cachePath = path.join(process.cwd(), '.cache', 'transformers');
+    if (fs.existsSync(cachePath)) {
+      fs.rmSync(cachePath, { recursive: true, force: true });
+      console.log('Model cache cleared');
+    }
+  } catch (error) {
+    console.error('Failed to clear cache:', error);
+  }
 };
