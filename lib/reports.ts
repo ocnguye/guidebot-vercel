@@ -1,12 +1,7 @@
 import fs from "fs";
 import path from "path";
-import { pipeline, env } from '@xenova/transformers';
+import { HfInference } from "@huggingface/inference";
 import cosineSimilarity from "cosine-similarity";
-
-// Configure transformers environment for Xenova
-env.allowRemoteModels = true;
-env.allowLocalModels = false;
-env.cacheDir = './.cache/transformers';
 
 // Type definitions
 interface ParsedReport {
@@ -19,19 +14,6 @@ interface ScoredReport extends Report {
   score: number;
 }
 
-// Xenova returns different tensor structure
-interface XenovaTensor {
-  data: Float32Array;
-  dims: number[];
-}
-
-interface EmbeddingModel {
-  (input: string | string[], options?: {
-    pooling?: string;
-    normalize?: boolean;
-  }): Promise<XenovaTensor>;
-}
-
 export interface Report {
   id: number;
   text: string;
@@ -39,11 +21,50 @@ export interface Report {
 }
 
 let reports: Report[] = [];
-let embeddingsModel: EmbeddingModel | null = null;
+let hfClient: HfInference | null = null;
 let isLoaded: boolean = false;
 
 /**
- * Load reports from JSONL and generate embeddings using Xenova transformers
+ * Initialize Hugging Face client
+ */
+const initializeHFClient = (): boolean => {
+  const token = process.env.HF_TOKEN || process.env.GUIDEBOT_TOKEN || process.env.HUGGINGFACE_API_KEY;
+  
+  if (!token) {
+    console.error("No Hugging Face token found for embeddings");
+    return false;
+  }
+
+  hfClient = new HfInference(token);
+  console.log("Hugging Face client initialized for embeddings");
+  return true;
+};
+
+/**
+ * Generate embeddings using HF Inference API
+ */
+const generateEmbedding = async (text: string): Promise<number[]> => {
+  if (!hfClient) {
+    throw new Error("HF client not initialized");
+  }
+
+  try {
+    const response = await hfClient.featureExtraction({
+      model: 'sentence-transformers/all-MiniLM-L6-v2',
+      inputs: text
+    });
+
+    // HF API returns embeddings as nested arrays, flatten if needed
+    const embedding = Array.isArray(response[0]) ? response[0] : response;
+    return embedding as number[];
+  } catch (error) {
+    console.error('Failed to generate embedding:', error);
+    throw error;
+  }
+};
+
+/**
+ * Load reports from JSONL and generate embeddings using HF Inference API
  */
 export const loadReports = async (): Promise<void> => {
   if (isLoaded) {
@@ -52,6 +73,11 @@ export const loadReports = async (): Promise<void> => {
   }
 
   try {
+    // Initialize HF client
+    if (!initializeHFClient()) {
+      throw new Error("Failed to initialize Hugging Face client");
+    }
+
     // Load the JSONL file
     const filePath: string = path.join(process.cwd(), "IRReports_DEID.jsonl");
     
@@ -84,76 +110,45 @@ export const loadReports = async (): Promise<void> => {
 
     console.log(`Loaded ${reports.length} reports from file`);
 
-    // Initialize embedding model using Xenova
-    console.log("Initializing Xenova embeddings model...");
+    // Generate embeddings using HF Inference API
+    console.log("Generating embeddings using Hugging Face Inference API...");
     
-    try {
-      // Use Xenova's pipeline - it handles downloading and caching automatically
-      const model = await pipeline(
-        'feature-extraction', 
-        'Xenova/all-MiniLM-L6-v2',
-        { 
-          quantized: false, // Set to true for smaller model size, false for better accuracy
-          progress_callback: (data: any) => {
-            if (data.status === 'downloading') {
-              console.log(`Downloading model: ${data.name} - ${Math.round(data.progress)}%`);
-            } else if (data.status === 'loading') {
-              console.log(`Loading model: ${data.name}`);
-            }
-          }
-        }
-      );
-      
-      embeddingsModel = model as EmbeddingModel;
-      console.log("Xenova embeddings model loaded successfully");
-    } catch (modelError: unknown) {
-      const errorMessage = modelError instanceof Error ? modelError.message : 'Unknown error';
-      console.error("Failed to load Xenova embeddings model:", errorMessage);
-      throw new Error(`Embeddings model loading failed: ${errorMessage}`);
-    }
+    let processed = 0;
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-    // Generate embeddings for each report using batch processing
-    console.log("Generating embeddings for all reports...");
-    
-    const batchSize: number = 5; // Smaller batch size for Xenova to avoid memory issues
-    let processed: number = 0;
-    
-    for (let i = 0; i < reports.length; i += batchSize) {
-      const batch: Report[] = reports.slice(i, i + batchSize);
-      
+    for (const report of reports) {
       try {
-        if (!embeddingsModel) {
-          throw new Error("Embeddings model not initialized");
+        // Add small delay to avoid rate limiting
+        if (processed > 0 && processed % 10 === 0) {
+          await delay(1000); // 1 second delay every 10 requests
         }
-        
-        // Process each text individually with Xenova (more reliable)
-        for (const report of batch) {
-          try {
-            const embedding: XenovaTensor = await embeddingsModel(report.text, {
-              pooling: 'mean',
-              normalize: true
-            });
-            
-            // Convert tensor data to array
-            report.embedding = Array.from(embedding.data);
-            processed++;
-            
-          } catch (singleError: unknown) {
-            const errorMessage = singleError instanceof Error ? singleError.message : 'Unknown error';
-            console.error(`Failed to generate embedding for report ${report.id}:`, errorMessage);
-            report.embedding = [];
-          }
-        }
-        
-        if (processed % 25 === 0 || processed === reports.length) {
+
+        const embedding = await generateEmbedding(report.text);
+        report.embedding = embedding;
+        processed++;
+
+        if (processed % 50 === 0 || processed === reports.length) {
           console.log(`Generated embeddings: ${processed}/${reports.length}`);
         }
+
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`Failed to generate embedding for report ${report.id}:`, errorMessage);
         
-      } catch (batchError: unknown) {
-        const errorMessage = batchError instanceof Error ? batchError.message : 'Unknown error';
-        console.error(`Failed to process batch starting at ${i}:`, errorMessage);
-        // Set empty embeddings for failed batch
-        for (const report of batch) {
+        // If it's a rate limit error, wait longer
+        if (errorMessage.includes('rate') || errorMessage.includes('429')) {
+          console.log('Rate limited, waiting 5 seconds...');
+          await delay(5000);
+          // Retry once
+          try {
+            const embedding = await generateEmbedding(report.text);
+            report.embedding = embedding;
+            processed++;
+          } catch (retryError) {
+            console.error(`Retry failed for report ${report.id}`);
+            report.embedding = [];
+          }
+        } else {
           report.embedding = [];
         }
       }
@@ -177,27 +172,22 @@ export const loadReports = async (): Promise<void> => {
 };
 
 /**
- * Retrieve top-k relevant reports for a query using Xenova embeddings
+ * Retrieve top-k relevant reports for a query using HF Inference API
  */
 export const retrieveRelevantReports = async (query: string, topK: number = 3): Promise<Report[]> => {
   if (!isLoaded) {
     throw new Error("Reports not loaded. Call loadReports() first.");
   }
 
-  if (!embeddingsModel) {
-    throw new Error("Embeddings model not available");
+  if (!hfClient) {
+    throw new Error("HF client not available");
   }
 
   try {
     console.log(`Searching for: "${query}"`);
     
-    // Generate embedding for the query using Xenova
-    const queryEmbedding: XenovaTensor = await embeddingsModel(query, {
-      pooling: 'mean',
-      normalize: true
-    });
-    
-    const queryVector: number[] = Array.from(queryEmbedding.data);
+    // Generate embedding for the query using HF API
+    const queryEmbedding = await generateEmbedding(query);
     
     // Calculate similarity with all reports that have embeddings
     const validReports: Report[] = reports.filter((r: Report) => r.embedding.length > 0);
@@ -207,7 +197,7 @@ export const retrieveRelevantReports = async (query: string, topK: number = 3): 
     }
     
     const scored: ScoredReport[] = validReports.map((r: Report): ScoredReport => {
-      const similarity: number = cosineSimilarity(queryVector, r.embedding);
+      const similarity: number = cosineSimilarity(queryEmbedding, r.embedding);
       return {
         ...r,
         score: similarity
@@ -250,17 +240,4 @@ export const getEmbeddingStats = (): { total: number; withEmbeddings: number; em
     withEmbeddings: withEmbeddings.length,
     embeddingDim: withEmbeddings.length > 0 ? withEmbeddings[0].embedding.length : 0
   };
-};
-
-// Optional: Add a function to clear cache if needed
-export const clearModelCache = (): void => {
-  try {
-    const cachePath = path.join(process.cwd(), '.cache', 'transformers');
-    if (fs.existsSync(cachePath)) {
-      fs.rmSync(cachePath, { recursive: true, force: true });
-      console.log('Model cache cleared');
-    }
-  } catch (error) {
-    console.error('Failed to clear cache:', error);
-  }
 };
