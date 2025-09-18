@@ -48,7 +48,7 @@ function createChatMessages(query: string, context: string) {
   return [
     {
       role: "system" as const,
-      content: "You are GuideBot, a radiology assistant. Use ONLY the context provided to answer questions. If you're unsure or the context doesn't contain the answer, say you don't know. Be precise and medical in your responses."
+      content: "You are GuideBot, a interventional radiology assistant. Use the context provided to answer user queries. Be precise and medical in your responses. Format steps and equipment as numbered or dashed lists."
     },
     {
       role: "user" as const,
