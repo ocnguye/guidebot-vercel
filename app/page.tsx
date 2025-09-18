@@ -13,11 +13,14 @@ interface ApiResponse {
   error?: string;
 }
 
-async function askGuideBot(query: string): Promise<string> {
+async function askGuideBot(query: string, conversationHistory: Message[] = []): Promise<string> {
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ 
+      query, 
+      conversationHistory: conversationHistory.slice(-6) // Send last 6 messages for context
+    }),
   });
 
   if (!res.ok) {
@@ -52,7 +55,7 @@ export default function Chat() {
     setLoading(true);
 
     try {
-      const botResponse = await askGuideBot(userInput);
+      const botResponse = await askGuideBot(userInput, messages);
       setMessages([...newMessages, { role: "bot", text: botResponse }]);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
@@ -94,32 +97,40 @@ export default function Chat() {
                     <ReactMarkdown 
                       components={{
                         // Style numbered lists
-                        ol: (props: React.ComponentPropsWithoutRef<'ol'>) => (
-                          <ol className="list-decimal list-inside space-y-2 my-2" {...props}>
+                        ol: (props) => (
+                          <ol {...props} className="list-decimal list-inside space-y-2 my-2">
                             {props.children}
                           </ol>
                         ),
                         // Style bullet lists  
-                        ul: (props: React.ComponentPropsWithoutRef<'ul'>) => (
-                          <ul className="list-disc list-inside space-y-1 my-2 ml-4" {...props}>
+                        ul: (props) => (
+                          <ul {...props} className="list-disc list-inside space-y-1 my-2 ml-4">
                             {props.children}
                           </ul>
                         ),
                         // Style list items
-                        li: (props: React.ComponentPropsWithoutRef<'li'>) => (
-                          <li className="leading-relaxed" {...props}>{props.children}</li>
+                        li: (props) => (
+                          <li {...props} className="leading-relaxed">
+                            {props.children}
+                          </li>
                         ),
                         // Style bold text
-                        strong: (props: React.ComponentPropsWithoutRef<'strong'>) => (
-                          <strong className="font-bold text-gray-900" {...props}>{props.children}</strong>
+                        strong: (props) => (
+                          <strong {...props} className="font-bold text-gray-900">
+                            {props.children}
+                          </strong>
                         ),
                         // Style paragraphs
-                        p: (props: React.ComponentPropsWithoutRef<'p'>) => (
-                          <p className="mb-2 leading-relaxed" {...props}>{props.children}</p>
+                        p: (props) => (
+                          <p {...props} className="mb-2 leading-relaxed">
+                            {props.children}
+                          </p>
                         ),
                         // Style headings
-                        h3: (props: React.ComponentPropsWithoutRef<'h3'>) => (
-                          <h3 className="font-bold text-lg mb-2 mt-3" {...props}>{props.children}</h3>
+                        h3: (props) => (
+                          <h3 {...props} className="font-bold text-lg mb-2 mt-3">
+                            {props.children}
+                          </h3>
                         )
                       }}
                     >

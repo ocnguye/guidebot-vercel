@@ -5,6 +5,7 @@ import { loadReports, retrieveRelevantReports } from "../../../lib/reports";
 // Types
 interface RequestBody {
   query: string;
+  conversationHistory?: Array<{ role: string; text: string }>;
 }
 
 interface MedicalModel {
@@ -42,22 +43,43 @@ const initHFInference = (): boolean => {
 };
 
 // Create system and user messages for chat completion
-function createChatMessages(query: string, context: string) {
+type ChatRole = "system" | "user" | "assistant";
+
+interface ChatMessage {
+  role: ChatRole;
+  content: string;
+}
+
+function createChatMessages(query: string, context: string, conversationHistory: Array<{ role: string; text: string }> = []): ChatMessage[] {
   const limitedContext = context.substring(0, 2000);
   
-  return [
+  const messages: ChatMessage[] = [
     {
-      role: "system" as const,
-      content: "You are GuideBot, a radiology assistant. Use the context provided to answer questions, formatting steps and equipment as numbered or dashed lists. Be concise and brief in your responses."
-    },
-    {
-      role: "user" as const,
-      content: `Context:
-${limitedContext}
-
-Question: ${query}`
+      role: "system",
+      content: "You are GuideBot, a radiology assistant - use context to answer questions, format equipment as bullets (•) and steps as numbers (1,2,3), provide complete detailed responses."
     }
   ];
+
+  // Add conversation history (last few exchanges for context)
+  conversationHistory.slice(-4).forEach(msg => {
+    messages.push({
+      role: msg.role === "user" ? "user" : "assistant",
+      content: msg.text
+    });
+  });
+
+  // Add current query with context
+  messages.push({
+    role: "user",
+    content: `Context from medical reports:
+      ${limitedContext}
+
+      Medical Question: ${query}
+
+      Please provide a complete, structured response. If this is a follow-up question, refer to our previous conversation.`
+  });
+
+  return messages;
 }
 
 // Generate response using Qwen3 via chat completion
@@ -126,18 +148,18 @@ const init = async (): Promise<void> => {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body: RequestBody = await req.json();
-    const { query } = body;
+    const { query, conversationHistory = [] } = body;
     
     if (!query || typeof query !== "string" || query.trim().length === 0) {
       return NextResponse.json({ error: "Valid query required" }, { status: 400 });
     }
 
-    console.log(`Processing medical query: "${query}"`);
+    console.log(`Processing query: "${query}" with ${conversationHistory.length} history messages`);
 
     // Initialize system
     await init();
 
-    // Retrieve relevant context from medical reports
+    // Retrieve relevant context
     let contextText = "";
     try {
       const relevantReports = await retrieveRelevantReports(query, 3);
@@ -145,77 +167,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       console.log(`Retrieved ${relevantReports.length} relevant medical reports`);
     } catch (reportsError: any) {
       console.warn("Reports retrieval failed:", reportsError.message);
-      // Continue without context rather than failing
     }
 
-    // Generate response using Qwen3
+    // Generate response with conversation context
     const model = getMedicalModel();
+    const messages = createChatMessages(query, contextText, conversationHistory);
     
-    try {
-      // Create chat messages for instruction-tuned model
-      const messages = createChatMessages(query, contextText);
-      console.log("Generating medical response...");
-      console.log(`Using model: ${model.name}`);
-      console.log(`Messages created: ${messages.length} messages`);
-      
-      const response = await generateWithQwen3(messages, model);
-      console.log(`Raw response: "${response}"`);
-      
-      if (!response || response.trim().length < 10) {
-        console.log("Response too short or empty");
-        return NextResponse.json({
-          result: "I'm having trouble generating a response right now. Please try rephrasing your question or try again later."
-        });
-      }
-      
-      const cleanedResponse = cleanResponse(response);
-      console.log(`Cleaned response: "${cleanedResponse}"`);
-      
-      if (cleanedResponse.length < 5) {
-        return NextResponse.json({
-          result: "I couldn't generate a complete response. Please try rephrasing your question."
-        });
-      }
-      
-      return NextResponse.json({
-        result: cleanedResponse,
-        model_used: model.name
-      });
-      
-    } catch (generationError: any) {
-      console.error("Qwen3 generation failed:", generationError.message);
-      
-      // Provide more specific error handling for Qwen3
-      if (generationError.message.includes('overloaded') || generationError.message.includes('currently loading')) {
-        return NextResponse.json({ 
-          result: "The Qwen3 model is currently overloaded or loading. Please try again in a few moments."
-        });
-      } else if (generationError.message.includes('timeout')) {
-        return NextResponse.json({ 
-          result: "The request timed out. Please try with a shorter question."
-        });
-      } else if (generationError.message.includes('rate limit')) {
-        return NextResponse.json({ 
-          result: "Rate limit exceeded. Please wait before making another request."
-        });
-      } else if (generationError.message.includes('no inference providers') || generationError.message.includes('not available')) {
-        return NextResponse.json({ 
-          result: "The Qwen3 model is not currently available on the free tier. This 80B model likely requires a Pro account or paid inference endpoints."
-        });
-      } else if (generationError.message.includes('conversational')) {
-        return NextResponse.json({ 
-          result: "The model requires conversational API access. This indicates the model may not be available through the current inference method."
-        });
-      } else {
-        return NextResponse.json({ 
-          error: `Model generation failed: ${generationError.message}`
-        }, { status: 500 });
-      }
-    }
+    const response = await generateWithQwen3(messages, model);
+    const cleanedResponse = cleanResponse(response);
+    
+    return NextResponse.json({
+      result: cleanedResponse,
+      model_used: model.name
+    });
 
   } catch (err: any) {
     console.error("API error:", err);
-    
     return NextResponse.json({ 
       error: `Failed to process medical query: ${err.message}`
     }, { status: 500 });
