@@ -71,6 +71,10 @@ export default function Chat() {
   return (
     <div className="flex flex-col h-screen bg-purple-100 p-4">
       <div className="flex flex-col h-full max-w-4xl mx-auto w-full bg-white rounded-lg shadow-lg overflow-hidden">
+        {/* Header */}
+        <div className="bg-purple-300 py-5 px-6">
+          <h1 className="text-3xl font-bold text-white text-center tracking-wide">GuideBot</h1>
+        </div>
         {/* Chat history */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {messages.length === 0 && (
@@ -88,7 +92,7 @@ export default function Chat() {
               <div
                 className={`p-3 rounded-lg max-w-[80%] ${
                   msg.role === "user"
-                    ? "bg-blue-500 text-white"
+                    ? "bg-purple-300 text-white"
                     : "bg-gray-100 text-gray-800 border"
                 }`}
               >
@@ -160,13 +164,13 @@ export default function Chat() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
-              className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-800"
+              className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-200 focus:border-transparent text-gray-800"
               placeholder="Ask about a procedure..."
               disabled={loading}
             />
             <button
               onClick={handleSend}
-              className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="bg-purple-300 text-white px-6 py-3 rounded-lg hover:bg-purple-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               disabled={loading}
             >
               Send
