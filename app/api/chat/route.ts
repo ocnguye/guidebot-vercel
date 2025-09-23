@@ -161,9 +161,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // Retrieve relevant context
     let contextText = "";
+    let usedReports: any[] = [];
     try {
       const relevantReports = await retrieveRelevantReports(query, 3);
       contextText = relevantReports.map((r: any) => r.text).join("\n\n");
+      usedReports = relevantReports.map((r: any) => ({
+        id: r.id,
+        snippet: r.text.slice(0, 120).replace(/\s+/g, " ") + "...",
+        fullText: r.text
+      }));
       console.log(`Retrieved ${relevantReports.length} relevant medical reports`);
     } catch (reportsError: any) {
       console.warn("Reports retrieval failed:", reportsError.message);
@@ -178,7 +184,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     
     return NextResponse.json({
       result: cleanedResponse,
-      model_used: model.name
+      model_used: model.name,
+      usedReports
     });
 
   } catch (err: any) {
