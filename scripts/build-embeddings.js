@@ -1,4 +1,3 @@
-// scripts/build-embeddings.js
 const fs = require('fs');
 const path = require('path');
 const { HfInference } = require('@huggingface/inference');
@@ -8,21 +7,15 @@ require('dotenv').config({ path: '.env' });
 
 async function generateEmbeddings() {
   console.log('Starting embeddings generation...');
-  
-  // Debug environment variables
-  console.log('Environment variables check:');
-  console.log('NODE_ENV:', process.env.NODE_ENV);
-  console.log('HF_TOKEN exists:', !!process.env.HF_TOKEN);
-  console.log('GUIDEBOT_TOKEN exists:', !!process.env.GUIDEBOT_TOKEN);
-  console.log('HUGGINGFACE_API_KEY exists:', !!process.env.HUGGINGFACE_API_KEY);
-  
-  const token = process.env.HF_TOKEN || process.env.GUIDEBOT_TOKEN || process.env.HUGGINGFACE_API_KEY;
+  console.log('GUIDEBOT TOKEN exists:', !!process.env.GUIDEBOT3);
+
+  const token = process.env.GUIDEBOT3;
   
   if (!token) {
     console.error('Available environment variables:', Object.keys(process.env).filter(key => 
       key.toLowerCase().includes('token') || key.toLowerCase().includes('hf') || key.toLowerCase().includes('guide')
     ));
-    throw new Error('No Hugging Face token found. Please set GUIDEBOT_TOKEN environment variable.');
+    throw new Error('No Hugging Face token found. Please set GUIDEBOT environment variable.');
   }
   
   console.log('Token found, length:', token.length);

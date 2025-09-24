@@ -19,7 +19,7 @@ let isLoaded: boolean = false;
  * Initialize HF client for query embeddings only
  */
 const initializeHFClient = (): boolean => {
-  const token = process.env.HF_TOKEN || process.env.GUIDEBOT_TOKEN || process.env.HUGGINGFACE_API_KEY;
+  const token = process.env.GUIDEBOT3;
   
   if (!token) {
     console.error("No Hugging Face token found for embeddings");

@@ -2,8 +2,8 @@ import React, { useState } from "react";
 
 export interface UsedReport {
   id: number | string;
-  snippet: string;
-  fullText: string; // ✅ now guaranteed from API
+  snippet: string; // preview text for case references
+  fullText: string; // full text reference
 }
 
 export default function UsedReports({ reports }: { reports: UsedReport[] }) {
@@ -12,46 +12,54 @@ export default function UsedReports({ reports }: { reports: UsedReport[] }) {
   if (!reports?.length) return null;
 
   return (
-    <aside className="relative w-full md:w-80 bg-gray-50 border-l px-4 py-6">
-      <h2 className="font-semibold text-purple-700 mb-3 text-lg">
-        Reports Used for Context
-      </h2>
-      <ul className="space-y-3 text-xs">
-        {reports.map((r) => (
-          <li
-            key={r.id}
-            className="border-b pb-2 cursor-pointer hover:bg-gray-100 rounded"
-            onClick={() => setSelectedReport(r)}
-          >
-            <span className="font-mono text-gray-800">#{r.id}</span>
-            <div className="truncate text-gray-800">{r.snippet}</div>
-          </li>
-        ))}
-      </ul>
+    <aside className={`relative bg-gray-50 border-l transition-all duration-300 ${
+      selectedReport ? 'w-full md:w-2/3' : 'w-full md:w-80'
+    }`}>
+      <div className="flex h-full">
+        {/* Cases Panel */}
+        <div className={`px-4 py-6 transition-all duration-300 ${
+          selectedReport ? 'w-80 border-r' : 'w-full'
+        }`}>
+          <h2 className="font-semibold text-purple-700 mb-3 text-lg">
+            Reports Used for Context
+          </h2>
+          <ul className="space-y-3 text-xs">
+            {reports.map((r) => (
+              <li
+                key={r.id}
+                className={`border-b pb-2 cursor-pointer hover:bg-gray-100 rounded p-2 transition-colors ${
+                  selectedReport?.id === r.id ? 'bg-purple-100 border-purple-300' : ''
+                }`}
+                onClick={() => setSelectedReport(r)}
+              >
+                <span className="font-mono text-gray-800">#{r.id}</span>
+                <div className="truncate text-gray-800">{r.snippet}</div>
+              </li>
+            ))}
+          </ul>
+        </div>
 
-      {selectedReport && (
-        <div className="fixed inset-0 z-40 flex">
-          <div
-            className="fixed inset-0 bg-black bg-opacity-40"
-            onClick={() => setSelectedReport(null)}
-          />
-
-          <div className="relative ml-auto w-full max-w-xl bg-white shadow-xl p-6 overflow-y-auto transition-transform transform translate-x-0">
-            <button
-              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"
-              onClick={() => setSelectedReport(null)}
-            >
-              ✕
-            </button>
-            <h3 className="text-lg font-semibold mb-4 text-purple-700">
-              Report #{selectedReport.id}
-            </h3>
-            <pre className="whitespace-pre-wrap text-sm text-gray-800">
+        {/* Report Detail Panel */}
+        {selectedReport && (
+          <div className="flex-1 px-4 py-6 bg-white overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-purple-700">
+                Report #{selectedReport.id}
+              </h3>
+              <button
+                className="text-gray-500 hover:text-gray-700 text-xl leading-none"
+                onClick={() => setSelectedReport(null)}
+                title="Close report view"
+              >
+                ✕
+              </button>
+            </div>
+            <pre className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed">
               {selectedReport.fullText}
             </pre>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </aside>
   );
 }

@@ -25,7 +25,7 @@ const getMedicalModel = (): MedicalModel => ({
 
 // Initialize HF Inference
 const initHFInference = (): boolean => {
-  const token = process.env.HF_TOKEN || process.env.GUIDEBOT_TOKEN || process.env.HUGGINGFACE_API_KEY;
+  const token = process.env.GUIDEBOT3;
   
   if (!token) {
     console.error("No Hugging Face token found. Please set HF_TOKEN in .env.local");

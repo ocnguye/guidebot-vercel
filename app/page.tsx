@@ -70,10 +70,9 @@ export default function Chat() {
     }
   };
 
-  // ...existing code...
   return (
     <div className="flex flex-col h-screen bg-purple-100 p-4">
-      <div className="flex flex-1 h-full max-w-6xl mx-auto w-full bg-white rounded-lg shadow-lg overflow-hidden">
+      <div className="flex flex-1 h-full max-w-full mx-auto w-full bg-white rounded-lg shadow-lg overflow-hidden">
         {/* Main chat area */}
         <div className="flex flex-col flex-1">
           {/* Header */}
