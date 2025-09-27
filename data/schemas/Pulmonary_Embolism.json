@@ -1,0 +1,53 @@
+{
+  "Age": {
+    "type": "radio",
+    "max_points": 1,
+    "key_field": false,
+    "options": [
+      "Pediatric",
+      "Adult",
+      "Geriatric",
+      "Unknown"
+    ],
+    "description": ""
+  },
+  "Clot Location": {
+    "type": "list",
+    "max_points": 3,
+    "key_field": true,
+    "options": [
+      "Main pulmonary artery",
+      "Right main pulmonary artery",
+      "Left main pulmonary artery",
+      "Segmental artery (right)",
+      "Segmental artery (left)",
+      "Subsegmental artery (right)",
+      "Subsegmental artery (left)",
+      "Saddle embolus"
+    ],
+    "description": ""
+  },
+  "Laterality": {
+    "type": "radio",
+    "max_points": 1,
+    "key_field": false,
+    "options": [
+      "Unilateral",
+      "Bilateral",
+      "Central only"
+    ],
+    "description": ""
+  },
+  "Clot Burden": {
+    "type": "radio",
+    "max_points": 1,
+    "key_field": false,
+    "options": [
+      "Massive",
+      "Submassive",
+      "Low burden",
+      "Subsegmental only"
+    ],
+    "description": ""
+  }
+}

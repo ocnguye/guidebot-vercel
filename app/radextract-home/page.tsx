@@ -9,7 +9,7 @@ import { Badge } from '@/components/Badge'
 import { Progress } from '@/components/Progress'
 import { Upload, Key, Brain, Search, Download } from 'lucide-react'
 import UploadExcel from "@/components/UploadFile";
-import SchemaEditor from "@/components/SchemaEditor";
+import SchemaEditor, {SchemaField, Schema } from "@/components/SchemaEditor";
 
 interface CaseData {
   AccessionNumber: string
@@ -21,19 +21,6 @@ interface CaseData {
   'Fields Filled'?: number
   'Total Fields'?: number
   'Completion %'?: number
-}
-
-// --- FIXED TYPES ---
-interface SchemaField {
-  type: string;
-  max_points?: number;
-  key_field?: boolean;
-  options?: string[];
-  [key: string]: any;
-}
-
-interface Schema {
-  [field: string]: SchemaField;
 }
 
 interface ProcessingState {
@@ -60,7 +47,6 @@ export default function RadExtractPage() {
 
   const [uploadedData, setUploadedData] = useState<CaseData[]>([])
   const [processedData, setProcessedData] = useState<CaseData[]>([])
-  // --- FIXED STATE TYPE ---
   const [selectedSchema, setSelectedSchema] = useState<Schema>({});
   const [availableSchemas, setAvailableSchemas] = useState<string[]>([])
   const [markedCases, setMarkedCases] = useState<Set<string>>(new Set())
@@ -83,14 +69,6 @@ export default function RadExtractPage() {
     loadSchemas()
     loadSavedApiKey()
   }, [])
-
-  const getCurrentStep = () => {
-    if (!apiVerified) return 'setup'
-    if (uploadedData.length === 0) return 'data'
-    if (processedData.length === 0) return 'process'
-    if (markedCases.size === 0) return 'analyze'
-    return 'export'
-  }
 
   const loadSchemas = async () => {
     try {
@@ -259,14 +237,29 @@ export default function RadExtractPage() {
           {WORKFLOW_STEPS.map((step) => {
             const StepIcon = step.icon
             const isActive = currentTab === step.id
+            // Determine if tab is accessible (not disabled)
+            const isDisabled =
+              (step.id === 'process' && uploadedData.length === 0) ||
+              (step.id === 'analyze' && processedData.length === 0) ||
+              (step.id === 'export' && markedCases.size === 0);
+
             return (
-              <div key={step.id} className={`
-                flex items-center px-4 py-2 rounded-lg transition-colors
-                ${isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}
-              `}>
+              <button
+                key={step.id}
+                className={`
+                  flex items-center px-4 py-2 rounded-lg transition-colors
+                  ${isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}
+                  focus:outline-none
+                  ${!isDisabled ? 'hover:cursor-pointer hover:ring-2 hover:ring-primary/50' : 'cursor-not-allowed opacity-60'}
+                  group
+                `}
+                onClick={() => !isDisabled && setCurrentTab(step.id)}
+                disabled={isDisabled}
+                type="button"
+              >
                 <StepIcon className="w-5 h-5 mr-2" />
                 <span className="font-medium">{step.label}</span>
-              </div>
+              </button>
             )
           })}
         </div>
