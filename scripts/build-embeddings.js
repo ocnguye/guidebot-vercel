@@ -23,7 +23,7 @@ async function generateEmbeddings() {
   const hf = new HfInference(token);
   
   // Read the JSONL file
-  const filePath = path.join(__dirname, '..', 'IRReports_DEID.jsonl');
+  const filePath = path.join(__dirname, '..', 'IRS1000_DEID.jsonl');
   
   if (!fs.existsSync(filePath)) {
     throw new Error(`Reports file not found: ${filePath}`);
@@ -37,14 +37,19 @@ async function generateEmbeddings() {
   for (let i = 0; i < lines.length; i++) {
     try {
       const obj = JSON.parse(lines[i]);
-      const text = obj.ContentText || obj.text || '';
-      
-      if (!text.trim()) {
+      const text = obj.ContentText_DEID;
+      const reportId = obj.ReportID;
+
+      if (!text || !text.trim()) {
         console.log(`Skipping empty report ${i}`);
         continue;
       }
+      if (!reportId) {
+        console.log(`Skipping report ${i} with missing ReportID`);
+        continue;
+      }
       
-      console.log(`Processing report ${i + 1}/${lines.length}`);
+      console.log(`Processing report ${i + 1}/${lines.length} (ReportID: ${reportId})`);
       
       // Generate embedding
       const response = await hf.featureExtraction({
@@ -55,7 +60,7 @@ async function generateEmbeddings() {
       const embedding = Array.isArray(response[0]) ? response[0] : response;
       
       reports.push({
-        id: i,
+        reportId,
         text: text.trim(),
         embedding: embedding
       });

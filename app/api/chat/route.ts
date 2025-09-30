@@ -166,7 +166,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const relevantReports = await retrieveRelevantReports(query, 3);
       contextText = relevantReports.map((r: any) => r.text).join("\n\n");
       usedReports = relevantReports.map((r: any) => ({
-        id: r.id,
+        reportId: r.reportId,
         snippet: r.text.slice(0, 120).replace(/\s+/g, " ") + "...",
         fullText: r.text
       }));

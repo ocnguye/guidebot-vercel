@@ -2,7 +2,7 @@ import { HfInference } from "@huggingface/inference";
 import cosineSimilarity from "cosine-similarity";
 
 interface Report {
-  id: number;
+  reportId: number;
   text: string;
   embedding: number[];
 }
@@ -147,7 +147,7 @@ export const retrieveRelevantReports = async (query: string, topK: number = 3): 
     
     const searchTime = Date.now() - startTime;
     console.log(`✅ Found ${topResults.length} relevant reports in ${searchTime}ms`);
-    console.log('Top scores:', topResults.map(r => ({ id: r.id, score: r.score.toFixed(3) })));
+    console.log('Top scores:', topResults.map(r => ({ id: r.reportId, score: r.score.toFixed(3) })));
     
     return topResults;
 

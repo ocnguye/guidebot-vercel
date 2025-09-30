@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 
 export interface UsedReport {
-  id: number | string;
+  reportId: number | string;
   snippet: string; // preview text for case references
   fullText: string; // full text reference
 }
@@ -26,13 +26,13 @@ export default function UsedReports({ reports }: { reports: UsedReport[] }) {
           <ul className="space-y-3 text-xs">
             {reports.map((r) => (
               <li
-                key={r.id}
+                key={r.reportId}
                 className={`border-b pb-2 cursor-pointer hover:bg-gray-100 rounded p-2 transition-colors ${
-                  selectedReport?.id === r.id ? 'bg-purple-100 border-purple-300' : ''
+                  selectedReport?.reportId === r.reportId ? 'bg-purple-100 border-purple-300' : ''
                 }`}
                 onClick={() => setSelectedReport(r)}
               >
-                <span className="font-mono text-gray-800">#{r.id}</span>
+                <span className="font-mono text-gray-800">#{r.reportId}</span>
                 <div className="truncate text-gray-800">{r.snippet}</div>
               </li>
             ))}
@@ -44,7 +44,7 @@ export default function UsedReports({ reports }: { reports: UsedReport[] }) {
           <div className="flex-1 px-4 py-6 bg-white overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-purple-700">
-                Report #{selectedReport.id}
+                Report #{selectedReport.reportId}
               </h3>
               <button
                 className="text-gray-500 hover:text-gray-700 text-xl leading-none"
