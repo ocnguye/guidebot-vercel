@@ -1,0 +1,189 @@
+{
+  "mass_laterality": {
+    "type": "radio",
+    "description": "Side of the cerebellar pontine angle mass",
+    "options": [
+      "Left",
+      "Right",
+      "Bilateral"
+    ],
+    "key_field": true
+  },
+  "mass_type": {
+    "type": "list",
+    "description": "Most likely diagnosis based on imaging and clinical features",
+    "options": [
+      "Vestibular Schwannoma (Acoustic Neuroma)",
+      "Meningioma",
+      "Epidermoid Cyst",
+      "Arachnoid Cyst",
+      "Glioma",
+      "Hemangioblastoma",
+      "Metastasis",
+      "Other"
+    ],
+    "key_field": true
+  },
+  "tumor_size_mm": {
+    "type": "radio",
+    "description": "Maximum transverse diameter of the mass on MRI",
+    "options": [
+      "<10 mm",
+      "10-20 mm",
+      "21-30 mm",
+      "31-40 mm",
+      ">40 mm"
+    ],
+    "max_points": 5
+  },
+  "enhancement_pattern": {
+    "type": "list",
+    "description": "Contrast enhancement pattern on MRI",
+    "options": [
+      "Homogeneous",
+      "Heterogeneous",
+      "Ring-enhancing",
+      "Non-enhancing",
+      "Patchy"
+    ],
+    "max_points": 4
+  },
+  "signal_intensity_T1": {
+    "type": "list",
+    "description": "T1-weighted MRI signal intensity",
+    "options": [
+      "Hypointense",
+      "Isointense",
+      "Hyperintense",
+      "Mixed"
+    ],
+    "max_points": 3
+  },
+  "signal_intensity_T2": {
+    "type": "list",
+    "description": "T2-weighted MRI signal intensity",
+    "options": [
+      "Hyperintense",
+      "Isointense",
+      "Hypointense",
+      "Mixed"
+    ],
+    "max_points": 3
+  },
+  "cystic_components": {
+    "type": "radio",
+    "description": "Presence of cystic or necrotic components",
+    "options": [
+      "Yes",
+      "No"
+    ],
+    "max_points": 2
+  },
+  "internal_acoustic_canal_expansion": {
+    "type": "radio",
+    "description": "Expansion of the internal auditory canal",
+    "options": [
+      "Yes",
+      "No",
+      "Uncertain"
+    ],
+    "max_points": 3
+  },
+  "brainstem_compression": {
+    "type": "radio",
+    "description": "Evidence of brainstem compression or displacement",
+    "options": [
+      "None",
+      "Mild",
+      "Moderate",
+      "Severe"
+    ],
+    "max_points": 4
+  },
+  "cerebellar_compression": {
+    "type": "radio",
+    "description": "Evidence of cerebellar compression or displacement",
+    "options": [
+      "None",
+      "Mild",
+      "Moderate",
+      "Severe"
+    ],
+    "max_points": 4
+  },
+  "hearing_loss": {
+    "type": "radio",
+    "description": "Patient-reported or audiometric hearing loss",
+    "options": [
+      "Yes",
+      "No",
+      "Unconfirmed"
+    ],
+    "max_points": 3
+  },
+  "tinnitus": {
+    "type": "radio",
+    "description": "Presence of tinnitus",
+    "options": [
+      "Yes",
+      "No",
+      "Unconfirmed"
+    ],
+    "max_points": 2
+  },
+  "facial_numbness": {
+    "type": "radio",
+    "description": "Facial sensory disturbance (trigeminal involvement)",
+    "options": [
+      "Yes",
+      "No",
+      "Unconfirmed"
+    ],
+    "max_points": 2
+  },
+  "facial_weakness": {
+    "type": "radio",
+    "description": "Facial motor weakness (facial nerve involvement)",
+    "options": [
+      "Yes",
+      "No",
+      "Unconfirmed"
+    ],
+    "max_points": 2
+  },
+  "vertigo_or_dizziness": {
+    "type": "radio",
+    "description": "History of vertigo or dizziness",
+    "options": [
+      "Yes",
+      "No",
+      "Unconfirmed"
+    ],
+    "max_points": 2
+  },
+  "hydrocephalus": {
+    "type": "radio",
+    "description": "Evidence of obstructive hydrocephalus",
+    "options": [
+      "Yes",
+      "No",
+      "Uncertain"
+    ],
+    "max_points": 3,
+    "key_field": false
+  },
+  "additional_findings": {
+    "type": "list",
+    "description": "Other notable imaging findings",
+    "options": [
+      "Cystic change",
+      "Hemorrhage",
+      "Calcification",
+      "Dural tail",
+      "Peritumoral edema",
+      "Bone erosion",
+      "None noted"
+    ],
+    "max_points": 5
+  }
+}

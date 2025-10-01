@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     const firstRow = data[0] as any;
     const columns = Object.keys(firstRow);
 
-    if (!columns.includes("ContentText")) {
+    if (!columns.includes("ContentText") && !columns.includes("ContentText_DEID")) {
       return NextResponse.json(
         { error: "Missing required column: ContentText" },
         { status: 400 }
@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
       "Accession_Number",
       "accession",
       "accession_number",
+      "ReportID"
     ];
     const accessionCol = accessionColumns.find((col) =>
       columns.includes(col)

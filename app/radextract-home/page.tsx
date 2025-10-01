@@ -7,9 +7,10 @@ import { Input } from '@/components/Input'
 import { Select, SelectItem } from '@/components/Select'
 import { Badge } from '@/components/Badge'
 import { Progress } from '@/components/Progress'
-import { Upload, Key, Brain, Search, Download } from 'lucide-react'
+import { Upload, Key, Brain, Search, Download, MessageCircle } from 'lucide-react'
 import UploadExcel from "@/components/UploadFile";
-import SchemaEditor, {SchemaField, Schema } from "@/components/SchemaEditor";
+import SchemaEditor, { SchemaField, Schema } from "@/components/SchemaEditor";
+import SchemaHelperChatbot from "@/components/SchemaHelperChatbot";
 
 interface CaseData {
   AccessionNumber: string
@@ -64,6 +65,9 @@ export default function RadExtractPage() {
     minCompletion: 70,
     minFields: 0
   })
+
+  // Chatbot popup state
+  const [showChatbot, setShowChatbot] = useState(false);
 
   useEffect(() => {
     loadSchemas()
@@ -259,6 +263,23 @@ export default function RadExtractPage() {
               >
                 <StepIcon className="w-5 h-5 mr-2" />
                 <span className="font-medium">{step.label}</span>
+                {/* Show click icon on hover if accessible */}
+                {!isDisabled && (
+                  <span
+                    className="ml-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Click to open"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="inline w-4 h-4 text-primary"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12H9m6 0l-3-3m3 3l-3 3" />
+                    </svg>
+                  </span>
+                )}
               </button>
             )
           })}
@@ -336,7 +357,9 @@ export default function RadExtractPage() {
           {/* Main Content: Only render the current step's content */}
           <div className="lg:col-span-3 space-y-6">
             {currentTab === 'setup' && (
-              <SchemaEditor schema={selectedSchema} setSchema={setSelectedSchema} />
+              <div className="flex flex-col gap-6">
+                <SchemaEditor schema={selectedSchema} setSchema={setSelectedSchema} />
+              </div>
             )}
 
             {currentTab === 'data' && (
@@ -414,6 +437,43 @@ export default function RadExtractPage() {
           </div>
         </div>
       </div>
+
+      {/* Floating Chatbot Button */}
+      <button
+        className="fixed bottom-6 right-6 z-50 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg p-4 flex items-center justify-center"
+        onClick={() => setShowChatbot(true)}
+        aria-label="Open Schema Helper Chatbot"
+        style={{ boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}
+      >
+        <MessageCircle className="w-6 h-6" />
+      </button>
+
+      {/* Chatbot Popup/Modal */}
+      {showChatbot && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-end md:justify-end bg-black/30">
+          <div className="bg-white rounded-t-2xl md:rounded-2xl shadow-2xl w-full md:w-[400px] max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <span className="font-semibold text-lg">Schema Helper</span>
+              <button
+                className="text-gray-500 hover:text-gray-700"
+                onClick={() => setShowChatbot(false)}
+                aria-label="Close"
+              >
+                <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2">
+              <SchemaHelperChatbot
+                onSchemaSuggested={setSelectedSchema}
+                onSchemaAppended={setSelectedSchema}
+                currentSchema={selectedSchema}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

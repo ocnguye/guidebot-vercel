@@ -49,5 +49,33 @@
       "Subsegmental only"
     ],
     "description": ""
+  },
+  "Chronicity": {
+    "type": "radio",
+    "max_points": 2,
+    "key_field": false,
+    "options": [
+      "Acute",
+      "Chronic",
+      "Indeterminate"
+    ],
+    "description": "Temporal nature of the clot: acute (recent), chronic (organized, vessel remodeling), or mixed."
+  },
+  "Etiology": {
+    "type": "radio",
+    "max_points": 2,
+    "key_field": false,
+    "options": [
+      "Surgery/trauma",
+      "Malignancy",
+      "Immobilization",
+      "Pregnancy/postpartum",
+      "Oral contraceptives/hormone therapy",
+      "Known thrombophilia",
+      "Previous VTE",
+      "Idiopathic",
+      "Unknown"
+    ],
+    "description": "Primary underlying cause of pulmonary embolism. Select the most relevant etiology based on clinical context. 'Previous VTE' is a major risk factor; 'Idiopathic' implies no identifiable cause after evaluation."
   }
 }
