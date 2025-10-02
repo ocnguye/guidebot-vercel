@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
+import * as XLSX from "xlsx";
 
 type FieldType = "radio" | "list";
 
@@ -18,21 +19,31 @@ export interface Schema {
   [field: string]: SchemaField;
 }
 
+interface SchemaEditorProps {
+  schema: Schema;
+  setSchema: (s: Schema) => void;
+  uploadedCases?: any[];
+  apiKey?: string;
+  model?: string;
+}
+
 export default function SchemaEditor({
   schema,
   setSchema,
-}: {
-  schema: Schema;
-  setSchema: (s: Schema) => void;
-}) {
+  uploadedCases = [],
+}: SchemaEditorProps) {
   const [schemaName, setSchemaName] = useState("");
   const [availableSchemas, setAvailableSchemas] = useState<string[]>([]);
   const [newField, setNewField] = useState("");
   const [newType, setNewType] = useState<FieldType>("radio");
   const [newDescription, setNewDescription] = useState("");
   const [saving, setSaving] = useState(false);
-  // Track collapsed/expanded state for each field
   const [collapsedFields, setCollapsedFields] = useState<{ [field: string]: boolean }>({});
+  const [generating, setGenerating] = useState(false);
+  const [genMsg, setGenMsg] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch available schemas on mount
   useEffect(() => {
@@ -48,7 +59,6 @@ export default function SchemaEditor({
         .then(res => res.json())
         .then(data => {
           setSchema(data);
-          // Reset collapsed state when loading a new schema
           setCollapsedFields({});
         });
     } else if (!schemaName) {
@@ -124,7 +134,6 @@ export default function SchemaEditor({
     setSaving(false);
     if (res.ok) {
       alert("Schema saved!");
-      // Refresh available schemas
       fetch("/api/schemas")
         .then(res => res.json())
         .then(setAvailableSchemas);
@@ -139,6 +148,89 @@ export default function SchemaEditor({
       [field]: !prev[field],
     }));
   }
+
+  // --- HuggingFace Schema Generation Integration ---
+  async function handleGenerateSchemaFromCases(cases: any[]) {
+    setGenMsg(null);
+    if (!cases || cases.length === 0) {
+      setGenMsg("No cases to generate schema from.");
+      return;
+    }
+    setGenerating(true);
+    try {
+      const res = await fetch("/api/generate-schema", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cases: cases.slice(0, 20), // Limit for prompt size
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to generate schema.");
+      }
+      const data = await res.json();
+      setSchema(data.schema);
+      setGenMsg("✅ Schema generated from uploaded file!");
+    } catch (err: any) {
+      setGenMsg(err.message || "Failed to generate schema.");
+    }
+    setGenerating(false);
+  }
+
+  // Handle file drop for schema generation
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragActive(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      setUploadedFile(file);
+      parseFileAndGenerateSchema(file);
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragActive(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragActive(false);
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) {
+      setUploadedFile(file);
+      parseFileAndGenerateSchema(file);
+    }
+  }
+
+  function parseFileAndGenerateSchema(file: File) {
+    setGenMsg(null);
+    setGenerating(true);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = evt.target?.result;
+        const workbook = XLSX.read(data, { type: "binary" });
+        const sheetName = workbook.SheetNames[0];
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+        handleGenerateSchemaFromCases(rows);
+      } catch (err: any) {
+        setGenMsg("Failed to parse file for schema generation.");
+        setGenerating(false);
+      }
+    };
+    reader.onerror = () => {
+      setGenMsg("Failed to read file.");
+      setGenerating(false);
+    };
+    reader.readAsBinaryString(file);
+  }
+
+  // --- End HuggingFace Integration ---
 
   return (
     <Card>
@@ -186,6 +278,52 @@ export default function SchemaEditor({
             placeholder="Or type new schema name"
             className="w-full md:w-1/2"
           />
+        </div>
+        {/* HuggingFace Schema Generation Section */}
+        <div className="mb-6">
+          <div className="font-semibold mb-2">Generate Schema from Uploaded File</div>
+          <div
+            className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+              dragActive ? "border-blue-500 bg-blue-50" : "border-gray-300"
+            }`}
+            onClick={() => fileInputRef.current?.click()}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            style={{ minHeight: 80 }}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="hidden"
+              onChange={handleFileChange}
+              disabled={generating}
+            />
+            {uploadedFile ? (
+              <div className="flex flex-col items-center">
+                <span className="text-green-700 font-medium">
+                  {uploadedFile.name}
+                </span>
+                <span className="text-xs text-gray-500 mt-1">
+                  File ready for schema generation
+                </span>
+              </div>
+            ) : (
+              <span className="text-gray-600">
+                Drag & drop your Excel or CSV file here, or <span className="underline text-blue-600">click to select</span>
+              </span>
+            )}
+            <div className="text-xs text-gray-400 mt-1">Accepted: .xlsx, .xls, .csv</div>
+          </div>
+          <div className="text-xs mt-2 text-gray-500">
+            This will use the HuggingFace Qwen3 model and up to 20 rows from the uploaded file to suggest a schema.
+          </div>
+          {genMsg && (
+            <div className={`mt-2 text-sm ${genMsg.startsWith("✅") ? "text-green-700" : "text-red-700"}`}>
+              {genMsg}
+            </div>
+          )}
         </div>
         {Object.entries(schema).map(([field, def]) => (
           <div key={field} className="border rounded p-3 mb-4 bg-gray-50">

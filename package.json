@@ -22,6 +22,7 @@
     "clsx": "^2.1.1",
     "cosine-similarity": "^1.0.1",
     "dotenv": "^17.2.2",
+    "jsonrepair": "^3.13.1",
     "lucide-react": "^0.544.0",
     "next": "15.5.2",
     "openai": "^6.0.0",

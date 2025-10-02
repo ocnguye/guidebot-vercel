@@ -11,6 +11,7 @@ import { Upload, Key, Brain, Search, Download, MessageCircle } from 'lucide-reac
 import UploadExcel from "@/components/UploadFile";
 import SchemaEditor, { SchemaField, Schema } from "@/components/SchemaEditor";
 import SchemaHelperChatbot from "@/components/SchemaHelperChatbot";
+import Process from "@/components/Process";
 
 interface CaseData {
   AccessionNumber: string
@@ -41,25 +42,14 @@ const WORKFLOW_STEPS = [
 ]
 
 export default function RadExtractPage() {
-  const [apiKey, setApiKey] = useState('')
-  const [selectedModel, setSelectedModel] = useState('gpt-4')
-  const [apiVerified, setApiVerified] = useState(false)
-  const [availableModels, setAvailableModels] = useState<string[]>(['gpt-4', 'gpt-3.5-turbo'])
-
   const [uploadedData, setUploadedData] = useState<CaseData[]>([])
   const [processedData, setProcessedData] = useState<CaseData[]>([])
   const [selectedSchema, setSelectedSchema] = useState<Schema>({});
   const [availableSchemas, setAvailableSchemas] = useState<string[]>([])
+  const [schemasByName, setSchemasByName] = useState<{ [name: string]: Schema }>({});
   const [markedCases, setMarkedCases] = useState<Set<string>>(new Set())
 
   const [currentTab, setCurrentTab] = useState(WORKFLOW_STEPS[0].id)
-  const [processingState, setProcessingState] = useState<ProcessingState>({
-    isProcessing: false,
-    currentStep: '',
-    progress: 0,
-    processedCount: 0,
-    totalCount: 0
-  })
   const [filters, setFilters] = useState({
     pathology: 'All',
     minCompletion: 70,
@@ -71,106 +61,37 @@ export default function RadExtractPage() {
 
   useEffect(() => {
     loadSchemas()
-    loadSavedApiKey()
+    // eslint-disable-next-line
   }, [])
 
   const loadSchemas = async () => {
     try {
       const response = await fetch('/api/schemas')
       if (response.ok) {
-        const schemas = await response.json()
-        setAvailableSchemas(schemas)
+        const schemaNames = await response.json()
+        setAvailableSchemas(schemaNames)
+
+        // Fetch each schema's content
+        const schemaEntries = await Promise.all(
+          schemaNames.map(async (name: string) => {
+            const res = await fetch(`/api/schemas?name=${encodeURIComponent(name)}`);
+            if (res.ok) {
+              const schema = await res.json();
+              return [name, schema];
+            }
+            return [name, {}];
+          })
+        );
+        setSchemasByName(Object.fromEntries(schemaEntries));
       }
     } catch (error) {
       console.error('Failed to load schemas:', error)
     }
   }
 
-  const loadSavedApiKey = async () => {
-    try {
-      const response = await fetch('/api/settings/api-key')
-      if (response.ok) {
-        const data = await response.json()
-        if (data.apiKey) {
-          setApiKey(data.apiKey)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load API key:', error)
-    }
-  }
-
-  const verifyApiKey = async () => {
-    if (!apiKey) return
-
-    try {
-      const response = await fetch('/api/openai/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey, model: selectedModel })
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        setApiVerified(true)
-        setAvailableModels(data.models || ['gpt-4', 'gpt-3.5-turbo'])
-        setCurrentTab('data')
-
-        await fetch('/api/settings/api-key', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey })
-        })
-      } else {
-        const errorText = await response.text()
-        console.error("Verification failed:", response.status, errorText)
-        throw new Error(`API key verification failed: ${response.status} ${errorText}`)
-      }
-    } catch (error) {
-      console.error('API key verification failed:', error)
-      alert('Invalid API key. Please check and try again.')
-    }
-  }
-
   // Called after successful upload
   const handleUploadSuccess = (cases: any[]) => {
     setUploadedData(cases)
-  }
-
-  const handleProcess = async () => {
-    setProcessingState({
-      isProcessing: true,
-      currentStep: 'Processing',
-      progress: 0,
-      processedCount: 0,
-      totalCount: uploadedData.length
-    })
-
-    // Dummy processing simulation
-    let processed: CaseData[] = []
-    for (let i = 0; i < uploadedData.length; i++) {
-      // Simulate processing delay
-      await new Promise(res => setTimeout(res, 50))
-      processed.push({
-        ...uploadedData[i],
-        'Completion %': Math.random(),
-        'Fields Filled': Math.floor(Math.random() * 10),
-        'Total Fields': 10,
-        'Pathology Presence': Math.random() > 0.5 ? 'Yes' : 'No'
-      })
-      setProcessingState(state => ({
-        ...state,
-        processedCount: i + 1,
-        progress: Math.round(((i + 1) / uploadedData.length) * 100)
-      }))
-    }
-    setProcessedData(processed)
-    setProcessingState(state => ({
-      ...state,
-      isProcessing: false,
-      progress: 100
-    }))
-    setCurrentTab('analyze')
   }
 
   const toggleMarkCase = (accessionNumber: string) => {
@@ -263,23 +184,6 @@ export default function RadExtractPage() {
               >
                 <StepIcon className="w-5 h-5 mr-2" />
                 <span className="font-medium">{step.label}</span>
-                {/* Show click icon on hover if accessible */}
-                {!isDisabled && (
-                  <span
-                    className="ml-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Click to open"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="inline w-4 h-4 text-primary"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12H9m6 0l-3-3m3 3l-3 3" />
-                    </svg>
-                  </span>
-                )}
               </button>
             )
           })}
@@ -290,33 +194,6 @@ export default function RadExtractPage() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Sidebar: Only filters/settings, not step content */}
           <div className="lg:col-span-1 space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>API Settings</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Input
-                  placeholder="Enter API key"
-                  value={apiKey}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApiKey(e.target.value)}
-                  disabled={apiVerified}
-                />
-                <Select value={selectedModel} onChange={setSelectedModel}>
-                  {availableModels.map((model) => (
-                    <SelectItem key={model} value={model}>
-                      {model}
-                    </SelectItem>
-                  ))}
-                </Select>
-                {!apiVerified ? (
-                  <Button className="w-full" onClick={verifyApiKey}>
-                    Verify API Key
-                  </Button>
-                ) : (
-                  <Badge variant="secondary">Verified</Badge>
-                )}
-              </CardContent>
-            </Card>
             <Card>
               <CardHeader>
                 <CardTitle>Filters</CardTitle>
@@ -358,7 +235,10 @@ export default function RadExtractPage() {
           <div className="lg:col-span-3 space-y-6">
             {currentTab === 'setup' && (
               <div className="flex flex-col gap-6">
-                <SchemaEditor schema={selectedSchema} setSchema={setSelectedSchema} />
+                <SchemaEditor
+                  schema={selectedSchema}
+                  setSchema={setSelectedSchema}
+                />
               </div>
             )}
 
@@ -390,22 +270,14 @@ export default function RadExtractPage() {
                   <CardTitle>Process Reports</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {processingState.isProcessing ? (
-                    <>
-                      <Progress value={processingState.progress} />
-                      <p className="mt-2 text-sm">
-                        {processingState.processedCount}/{processingState.totalCount} processed
-                      </p>
-                    </>
-                  ) : (
-                    <Button
-                      className="w-full"
-                      disabled={uploadedData.length === 0}
-                      onClick={handleProcess}
-                    >
-                      Start Processing
-                    </Button>
-                  )}
+                  <Process
+                    uploadedData={uploadedData}
+                    availableSchemas={availableSchemas.map(name => ({
+                      name,
+                      schema: schemasByName[name] || {}
+                    }))}
+                    onProcessed={setProcessedData}
+                  />
                 </CardContent>
               </Card>
             )}

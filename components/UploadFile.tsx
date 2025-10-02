@@ -84,14 +84,14 @@ export default function UploadExcel({ onUploadSuccess }: UploadExcelProps) {
             <input
               ref={inputRef}
               type="file"
-              accept=".xlsx,.xls"
+              accept=".xlsx,.xls,.csv"
               className="hidden"
               onChange={handleFileChange}
             />
             <span className="text-gray-600 mb-2">
-              Drag & drop your Excel file here, or <span className="underline text-blue-600">click to select</span>
+              Drag & drop your Excel or CSV file here, or <span className="underline text-blue-600">click to select</span>
             </span>
-            <span className="text-xs text-gray-400">Accepted: .xlsx, .xls</span>
+            <span className="text-xs text-gray-400">Accepted: .xlsx, .xls, .csv</span>
             {file && (
               <span className="mt-2 text-sm text-gray-700 font-medium">
                 Selected: {file.name}
@@ -103,7 +103,7 @@ export default function UploadExcel({ onUploadSuccess }: UploadExcelProps) {
             className="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 disabled:opacity-50"
             disabled={!file}
           >
-            Upload Excel
+            Upload File
           </button>
         </form>
 
