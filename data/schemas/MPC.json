@@ -1,0 +1,35 @@
+{
+  "Disease_Characteristics": {
+    "Initial_Gleason_Score": null,
+    "PSA_at_diagnosis": null,
+    "TNM_stage": null,
+    "Metastatic_site": null,
+    "Number_of_metastatic_sites": null
+  },
+  "Biomarkers_Genetics": {
+    "Androgen_Receptor_Status": null,
+    "BRCA1_2_status": null,
+    "Other_mutations": [],
+    "PSMA_expression": null
+  },
+  "Treatment_History": {
+    "First_line_therapy": null,
+    "Response_to_first_line": null,
+    "Subsequent_therapies": [],
+    "Treatment_duration_months": null,
+    "Treatment_resistance": null
+  },
+  "Clinical_Outcomes": {
+    "PSA_response_percent_change": null,
+    "Radiographic_response": null,
+    "Progression_Free_Survival_months": null,
+    "Overall_Survival_months": null,
+    "Adverse_events": []
+  },
+  "Quality_of_Life_Symptoms": {
+    "Pain_score": null,
+    "Performance_status": null,
+    "Bone_pain": null,
+    "Fatigue": null
+  }
+}

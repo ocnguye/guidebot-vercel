@@ -3,7 +3,7 @@ import { HfInference } from "@huggingface/inference";
 import * as XLSX from "xlsx";
 import { jsonrepair } from "jsonrepair";
 
-const HF_TOKEN = process.env.GUIDEBOT3;
+const HF_TOKEN = process.env.GUIDEBOT_TOKEN;
 const MODEL = "Qwen/Qwen3-Next-80B-A3B-Instruct";
 
 // Helper to parse Excel/CSV buffer to array of objects

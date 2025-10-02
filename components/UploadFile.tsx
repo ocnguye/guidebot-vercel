@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 
 interface UploadExcelProps {
-  onUploadSuccess?: (cases: any[]) => void;
+  onUploadSuccess?: (cases: any[], fileName: string) => void;
 }
 
 export default function UploadExcel({ onUploadSuccess }: UploadExcelProps) {
@@ -37,10 +37,16 @@ export default function UploadExcel({ onUploadSuccess }: UploadExcelProps) {
       return;
     }
 
+    // Add filename to each case
+    const casesWithFilename = (data.cases || []).map((c: any) => ({
+      ...c,
+      __filename: file.name,
+    }));
+
     setStatus("✅ File processed successfully!");
-    setCases(data.cases);
+    setCases(casesWithFilename);
     setDownloadUrl(data.fileUrl);
-    if (onUploadSuccess) onUploadSuccess(data.cases);
+    if (onUploadSuccess) onUploadSuccess(casesWithFilename, file.name);
   }
 
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {

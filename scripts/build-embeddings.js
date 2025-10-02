@@ -7,9 +7,9 @@ require('dotenv').config({ path: '.env' });
 
 async function generateEmbeddings() {
   console.log('Starting embeddings generation...');
-  console.log('GUIDEBOT TOKEN exists:', !!process.env.GUIDEBOT3);
+  console.log('GUIDEBOT TOKEN exists:', !!process.env.GUIDEBOT_TOKEN);
 
-  const token = process.env.GUIDEBOT3;
+  const token = process.env.GUIDEBOT_TOKEN;
   
   if (!token) {
     console.error('Available environment variables:', Object.keys(process.env).filter(key => 

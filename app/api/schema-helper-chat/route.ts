@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { HfInference } from "@huggingface/inference";
 
-const HF_TOKEN = process.env.GUIDEBOT3;
+const HF_TOKEN = process.env.GUIDEBOT_TOKEN;
 const MODEL = "Qwen/Qwen3-Next-80B-A3B-Instruct";
 
 const baseSystemPrompt = `

@@ -11,6 +11,7 @@ import { Upload, Key, Brain, Search, Download, MessageCircle } from 'lucide-reac
 import UploadExcel from "@/components/UploadFile";
 import SchemaEditor, { SchemaField, Schema } from "@/components/SchemaEditor";
 import SchemaHelperChatbot from "@/components/SchemaHelperChatbot";
+import Analyze from "@/components/Analyze";
 import Process from "@/components/Process";
 
 interface CaseData {
@@ -23,27 +24,22 @@ interface CaseData {
   'Fields Filled'?: number
   'Total Fields'?: number
   'Completion %'?: number
-}
-
-interface ProcessingState {
-  isProcessing: boolean
-  currentStep: string
-  progress: number
-  processedCount: number
-  totalCount: number
+  __filename?: string
 }
 
 const WORKFLOW_STEPS = [
   { id: 'setup', icon: Key, label: 'Schema', description: 'Edit extraction schema' },
   { id: 'data', icon: Upload, label: 'Data', description: 'Upload and prepare data' },
-  { id: 'process', icon: Brain, label: 'Process', description: 'Run AI extraction' },
+  { id: 'process', icon: Brain, label: 'Compare', description: 'Compare original and de-identified reports' },
   { id: 'analyze', icon: Search, label: 'Analyze', description: 'Review and analyze results' },
   { id: 'export', icon: Download, label: 'Export', description: 'Download extracted data' }
 ]
 
 export default function RadExtractPage() {
   const [uploadedData, setUploadedData] = useState<CaseData[]>([])
-  const [processedData, setProcessedData] = useState<CaseData[]>([])
+  const [lastFileName, setLastFileName] = useState<string>("")
+  const [deidentifiedData, setDeidentifiedData] = useState<CaseData[]>([])
+  const [deidFileName, setDeidFileName] = useState<string>("")
   const [selectedSchema, setSelectedSchema] = useState<Schema>({});
   const [availableSchemas, setAvailableSchemas] = useState<string[]>([])
   const [schemasByName, setSchemasByName] = useState<{ [name: string]: Schema }>({});
@@ -55,6 +51,9 @@ export default function RadExtractPage() {
     minCompletion: 70,
     minFields: 0
   })
+
+  const [deidLoading, setDeidLoading] = useState(false);
+  const [deidError, setDeidError] = useState<string | null>(null);
 
   // Chatbot popup state
   const [showChatbot, setShowChatbot] = useState(false);
@@ -90,60 +89,42 @@ export default function RadExtractPage() {
   }
 
   // Called after successful upload
-  const handleUploadSuccess = (cases: any[]) => {
+  const handleUploadSuccess = (cases: any[], fileName: string) => {
     setUploadedData(cases)
+    setLastFileName(fileName)
+    setDeidentifiedData([])
+    setDeidFileName("")
+    setCurrentTab('data')
   }
 
-  const toggleMarkCase = (accessionNumber: string) => {
-    const newMarked = new Set(markedCases)
-    if (newMarked.has(accessionNumber)) {
-      newMarked.delete(accessionNumber)
-    } else {
-      newMarked.add(accessionNumber)
-    }
-    setMarkedCases(newMarked)
-  }
-
-  const getFilteredData = () => {
-    if (processedData.length === 0) return []
-
-    return processedData.filter(c => {
-      const completionMatch = (c['Completion %'] || 0) >= filters.minCompletion / 100
-      const fieldsMatch = (c['Fields Filled'] || 0) >= filters.minFields
-      const pathologyMatch = filters.pathology === 'All' || c['Pathology Presence'] === filters.pathology
-
-      return completionMatch && fieldsMatch && pathologyMatch
-    })
-  }
-
-  const exportResults = async () => {
-    const markedData = processedData.filter(c => markedCases.has(c.AccessionNumber))
-
+  const handleDeidentify = async () => {
+    setDeidLoading(true);
+    setDeidError(null);
     try {
-      const response = await fetch('/api/export', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cases: markedData,
-          schema: selectedSchema
-        })
-      })
-
-      if (response.ok) {
-        const blob = await response.blob()
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.style.display = 'none'
-        a.href = url
-        a.download = `radextract_results_${new Date().toISOString().split('T')[0]}.xlsx`
-        document.body.appendChild(a)
-        a.click()
-        window.URL.revokeObjectURL(url)
-      }
-    } catch (error) {
-      console.error('Export failed:', error)
+      const res = await fetch("/api/deidentify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cases: uploadedData }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Unknown error");
+      // Assign a new filename for the de-identified file
+      const deidFile = lastFileName
+        ? lastFileName.replace(/(\.[^.]+)?$/, "_deidentified$1")
+        : "deidentified_reports.xlsx";
+      const deidCases = (data.cases || []).map((c: CaseData) => ({
+        ...c,
+        __filename: deidFile,
+      }));
+      setDeidentifiedData(deidCases);
+      setDeidFileName(deidFile);
+      setCurrentTab('process');
+    } catch (err: any) {
+      setDeidError(err.message || "Failed to de-identify reports.");
+    } finally {
+      setDeidLoading(false);
     }
-  }
+  };
 
   // --- UI Render ---
   return (
@@ -164,8 +145,8 @@ export default function RadExtractPage() {
             const isActive = currentTab === step.id
             // Determine if tab is accessible (not disabled)
             const isDisabled =
-              (step.id === 'process' && uploadedData.length === 0) ||
-              (step.id === 'analyze' && processedData.length === 0) ||
+              (step.id === 'process' && (uploadedData.length === 0 || deidentifiedData.length === 0)) ||
+              (step.id === 'analyze' && deidentifiedData.length === 0) ||
               (step.id === 'export' && markedCases.size === 0);
 
             return (
@@ -256,10 +237,13 @@ export default function RadExtractPage() {
                   <Button
                     className="mt-4"
                     disabled={uploadedData.length === 0}
-                    onClick={() => setCurrentTab('process')}
+                    onClick={handleDeidentify}
                   >
-                    De-identify Reports
+                    {deidLoading ? "De-identifying..." : "De-identify Reports"}
                   </Button>
+                  {deidError && (
+                    <div className="text-red-600 mt-2">{deidError}</div>
+                  )}
                 </div>
               </div>
             )}
@@ -267,17 +251,16 @@ export default function RadExtractPage() {
             {currentTab === 'process' && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Process Reports</CardTitle>
+                  <CardTitle>Compare Original and De-identified Reports</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <Process
-                    uploadedData={uploadedData}
-                    availableSchemas={availableSchemas.map(name => ({
-                      name,
-                      schema: schemasByName[name] || {}
-                    }))}
-                    onProcessed={setProcessedData}
+                    uploadedData={deidentifiedData}
+                    selectedFileName={deidFileName}
                   />
+                  <div className="mt-6 flex justify-end">
+                    <Button onClick={() => setCurrentTab("data")}>Back to Upload</Button>
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -288,8 +271,15 @@ export default function RadExtractPage() {
                   <CardTitle>Analyze Results</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {/* Dummy content for now */}
-                  <div>Analysis UI coming soon...</div>
+                  <Analyze
+                    uploadedData={deidentifiedData}
+                    lastFileName={deidFileName}
+                    availableSchemas={availableSchemas.map(name => ({
+                      name,
+                      schema: schemasByName[name] || {}
+                    }))}
+                    onProcessed={() => {}}
+                  />
                 </CardContent>
               </Card>
             )}
@@ -300,7 +290,7 @@ export default function RadExtractPage() {
                   <CardTitle>Export Results</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <Button className="w-full" onClick={exportResults} disabled={markedCases.size === 0}>
+                  <Button className="w-full" onClick={() => {}} disabled={markedCases.size === 0}>
                     Download Selected Cases
                   </Button>
                 </CardContent>
