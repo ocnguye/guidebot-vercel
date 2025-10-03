@@ -35,45 +35,46 @@ export async function POST(req: NextRequest) {
     }
     const hf = new HfInference(HF_TOKEN);
 
-    const results = [];
-    for (const caseData of cases) {
-      const prompt = buildPrompt(caseData.ContentText, schema);
+    // Batch process all cases in parallel
+    const results = await Promise.all(
+      cases.map(async (caseData: any) => {
+        const prompt = buildPrompt(caseData.ContentText, schema);
 
-      // Call the LLM (adjust for your provider)
-      const response = await hf.chatCompletion({
-        model: MODEL,
-        messages: [{ role: "user", content: prompt }],
-        parameters: { max_new_tokens: 512, temperature: 0 },
-      });
+        let content = "";
+        let presence = "Unknown";
+        let extractedSchema = {};
+        try {
+          const response = await hf.chatCompletion({
+            model: MODEL,
+            messages: [{ role: "user", content: prompt }],
+            parameters: { max_new_tokens: 512, temperature: 0 },
+          });
+          content = response.choices?.[0]?.message?.content || "";
+          const parsed = typeof content === "string" ? JSON.parse(content) : content;
+          presence = parsed["Pathology Presence"] || "Unknown";
+          extractedSchema = parsed["Schema"] || {};
+        } catch {
+          // fallback: try to extract with regex or leave as unknown
+        }
 
-      const content = response.choices?.[0]?.message?.content || "";
-      let presence = "Unknown";
-      let extractedSchema = {};
-      try {
-        const parsed = typeof content === "string" ? JSON.parse(content) : content;
-        presence = parsed["Pathology Presence"] || "Unknown";
-        extractedSchema = parsed["Schema"] || {};
-      } catch {
-        // fallback: try to extract with regex or leave as unknown
-      }
+        // Calculate completion
+        const totalFields = Object.keys(schema).length;
+        const filledFields = Object.values(extractedSchema).filter(
+          v => v !== "" && v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0)
+        ).length;
+        const completion = totalFields > 0 ? filledFields / totalFields : 0;
 
-      // Calculate completion
-      const totalFields = Object.keys(schema).length;
-      const filledFields = Object.values(extractedSchema).filter(
-        v => v !== "" && v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0)
-      ).length;
-      const completion = totalFields > 0 ? filledFields / totalFields : 0;
-
-      results.push({
-        ...caseData,
-        "Raw Extraction": content,
-        "Pathology Presence": presence,
-        "Schema Extraction": JSON.stringify(extractedSchema),
-        "Fields Filled": filledFields,
-        "Total Fields": totalFields,
-        "Completion %": completion,
-      });
-    }
+        return {
+          ...caseData,
+          "Raw Extraction": content,
+          "Pathology Presence": presence,
+          "Schema Extraction": JSON.stringify(extractedSchema),
+          "Fields Filled": filledFields,
+          "Total Fields": totalFields,
+          "Completion %": completion,
+        };
+      })
+    );
 
     return NextResponse.json({ processed: results });
   } catch (error) {

@@ -10,6 +10,7 @@ interface AnalyzeProps {
   lastFileName?: string;
   availableSchemas: { name: string; schema: any }[];
   onProcessed: (processed: any[]) => void;
+  onExportMarked: (cases: any[]) => void;
 }
 
 export default function Analyze({
@@ -17,6 +18,7 @@ export default function Analyze({
   lastFileName,
   availableSchemas,
   onProcessed,
+  onExportMarked,
 }: AnalyzeProps) {
   const [selectedFileName, setSelectedFileName] = useState<string>(
     lastFileName ||
@@ -416,6 +418,14 @@ export default function Analyze({
           {Object.keys(markedFieldStats).length === 0 && (
             <p className="text-gray-500 mt-2">No marked cases for analysis.</p>
           )}
+        </div>
+        <div className="mt-4">
+          <Button
+            onClick={() => onExportMarked(marked)}
+            disabled={marked.length === 0}
+          >
+            Export Marked Reports
+          </Button>
         </div>
       </div>
     </div>

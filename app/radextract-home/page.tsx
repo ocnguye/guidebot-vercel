@@ -5,14 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/Card'
 import { Button } from '@/components/Button'
 import { Input } from '@/components/Input'
 import { Select, SelectItem } from '@/components/Select'
-import { Badge } from '@/components/Badge'
-import { Progress } from '@/components/Progress'
 import { Upload, Key, Brain, Search, Download, MessageCircle } from 'lucide-react'
 import UploadExcel from "@/components/UploadFile";
-import SchemaEditor, { SchemaField, Schema } from "@/components/SchemaEditor";
+import SchemaEditor, { Schema } from "@/components/SchemaEditor";
 import SchemaHelperChatbot from "@/components/SchemaHelperChatbot";
 import Analyze from "@/components/Analyze";
 import Process from "@/components/Process";
+import ExportMarked from "@/components/ExportMarked";
 
 interface CaseData {
   AccessionNumber: string
@@ -25,6 +24,7 @@ interface CaseData {
   'Total Fields'?: number
   'Completion %'?: number
   __filename?: string
+  [key: string]: any
 }
 
 const WORKFLOW_STEPS = [
@@ -43,7 +43,7 @@ export default function RadExtractPage() {
   const [selectedSchema, setSelectedSchema] = useState<Schema>({});
   const [availableSchemas, setAvailableSchemas] = useState<string[]>([])
   const [schemasByName, setSchemasByName] = useState<{ [name: string]: Schema }>({});
-  const [markedCases, setMarkedCases] = useState<Set<string>>(new Set())
+  const [markedCases, setMarkedCases] = useState<CaseData[]>([])
 
   const [currentTab, setCurrentTab] = useState(WORKFLOW_STEPS[0].id)
   const [filters, setFilters] = useState({
@@ -126,7 +126,6 @@ export default function RadExtractPage() {
     }
   };
 
-  // --- UI Render ---
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
@@ -147,7 +146,7 @@ export default function RadExtractPage() {
             const isDisabled =
               (step.id === 'process' && (uploadedData.length === 0 || deidentifiedData.length === 0)) ||
               (step.id === 'analyze' && deidentifiedData.length === 0) ||
-              (step.id === 'export' && markedCases.size === 0);
+              (step.id === 'export' && markedCases.length === 0);
 
             return (
               <button
@@ -279,6 +278,10 @@ export default function RadExtractPage() {
                       schema: schemasByName[name] || {}
                     }))}
                     onProcessed={() => {}}
+                    onExportMarked={(cases) => {
+                      setMarkedCases(cases);
+                      setCurrentTab("export");
+                    }}
                   />
                 </CardContent>
               </Card>
@@ -290,9 +293,7 @@ export default function RadExtractPage() {
                   <CardTitle>Export Results</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <Button className="w-full" onClick={() => {}} disabled={markedCases.size === 0}>
-                    Download Selected Cases
-                  </Button>
+                  <ExportMarked markedCases={markedCases} />
                 </CardContent>
               </Card>
             )}
