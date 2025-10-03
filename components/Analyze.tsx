@@ -36,8 +36,9 @@ export default function Analyze({
   const [filterPathology, setFilterPathology] = useState("All");
   const [filterMinCompletion, setFilterMinCompletion] = useState(0.7);
   const [filterMinFields, setFilterMinFields] = useState(0);
-  const [filterField, setFilterField] = useState("");
-  const [filterFieldValue, setFilterFieldValue] = useState("");
+
+  // Multi-field schema filtering
+  const [fieldFilters, setFieldFilters] = useState<{ [field: string]: string }>({});
 
   useEffect(() => {
     if (lastFileName) {
@@ -102,7 +103,11 @@ export default function Analyze({
     parsedProcessedData.forEach((row) => {
       Object.entries(row.parsedSchema || {}).forEach(([k, v]) => {
         if (!values[k]) values[k] = new Set();
-        values[k].add(v);
+        if (Array.isArray(v)) {
+          v.forEach((item) => values[k].add(item));
+        } else {
+          values[k].add(v);
+        }
       });
     });
     return Object.fromEntries(
@@ -119,21 +124,23 @@ export default function Analyze({
         (c["Fields Filled"] || 0) >= filterMinFields;
       const pathologyMatch =
         filterPathology === "All" || c["Pathology Presence"] === filterPathology;
-      const fieldMatch =
-        !filterField ||
-        (c.parsedSchema &&
-          (c.parsedSchema[filterField] === filterFieldValue ||
-            (Array.isArray(c.parsedSchema[filterField]) &&
-              c.parsedSchema[filterField].includes(filterFieldValue))));
-      return completionMatch && fieldsMatch && pathologyMatch && fieldMatch;
+
+      // Multi-field schema filtering
+      const fieldMatches = Object.entries(fieldFilters).every(([field, val]) => {
+        if (!val) return true;
+        const v = c.parsedSchema?.[field];
+        if (Array.isArray(v)) return v.includes(val);
+        return v === val;
+      });
+
+      return completionMatch && fieldsMatch && pathologyMatch && fieldMatches;
     });
   }, [
     parsedProcessedData,
     filterMinCompletion,
     filterMinFields,
     filterPathology,
-    filterField,
-    filterFieldValue,
+    fieldFilters,
   ]);
 
   // Analytics
@@ -173,13 +180,87 @@ export default function Analyze({
         if (!stats[k]) stats[k] = { filled: 0, values: {} };
         if (v !== "" && v !== null && v !== undefined) {
           stats[k].filled += 1;
-          const val = Array.isArray(v) ? v.join(",") : String(v);
-          stats[k].values[val] = (stats[k].values[val] || 0) + 1;
+          if (Array.isArray(v)) {
+            v.forEach((item) => {
+              stats[k].values[item] = (stats[k].values[item] || 0) + 1;
+            });
+          } else {
+            const val = String(v);
+            stats[k].values[val] = (stats[k].values[val] || 0) + 1;
+          }
         }
       });
     });
     return stats;
   }, [marked]);
+
+  // --- Advanced Schema Field Filters Section ---
+  const schemaFieldFilterSection = (
+    <div className="mt-4 border-t pt-4">
+      <div className="font-semibold mb-2">🎯 Filter by Extracted Fields</div>
+      <div className="flex flex-wrap gap-4">
+        {Object.entries(selectedSchema).map(([field, def]) => {
+          // Get unique values for this field from the data
+          const values = uniqueFieldValues[field] || [];
+          // Type guard for def
+          const hasOptions = (d: unknown): d is { options?: string[] } =>
+            typeof d === "object" && d !== null && "options" in d && Array.isArray((d as any).options);
+          // If schema has options, use those; otherwise, use unique values from data
+          const options = hasOptions(def) && def.options && def.options.length > 0 ? def.options : values;
+          // Controlled value for this field's filter
+          const filterValue = fieldFilters[field] || "";
+
+          return (
+            <div key={field} className="flex flex-col min-w-[160px]">
+              <label className="text-xs font-semibold mb-1">{field}</label>
+              {options.length > 0 ? (
+                <Select
+                  value={filterValue}
+                  onChange={val =>
+                    setFieldFilters((prev) => ({
+                      ...prev,
+                      [field]: val,
+                    }))
+                  }
+                  className="w-full"
+                >
+                  <SelectItem value="">Any</SelectItem>
+                  {options.map((opt: string) => (
+                    <SelectItem key={opt} value={opt}>
+                      {opt}
+                    </SelectItem>
+                  ))}
+                </Select>
+              ) : (
+                <Input
+                  value={filterValue}
+                  onChange={e =>
+                    setFieldFilters((prev) => ({
+                      ...prev,
+                      [field]: e.target.value,
+                    }))
+                  }
+                  placeholder="Any"
+                  className="w-full"
+                />
+              )}
+            </div>
+          );
+        })}
+        {/* Reset filter button */}
+        <div className="flex items-end">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setFieldFilters({})}
+          >
+            Clear Field Filters
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+  // --- End Advanced Schema Field Filters Section ---
 
   return (
     <div className="space-y-8">
@@ -258,39 +339,10 @@ export default function Analyze({
             className="w-24"
           />
         </div>
-        <div>
-          <label className="block text-xs font-semibold">Schema Field</label>
-          <Select
-            value={filterField}
-            onChange={setFilterField}
-            className="w-32"
-          >
-            <SelectItem value="">Any</SelectItem>
-            {Object.keys(selectedSchema).map((f) => (
-              <SelectItem key={f} value={f}>
-                {f}
-              </SelectItem>
-            ))}
-          </Select>
-        </div>
-        {filterField && (
-          <div>
-            <label className="block text-xs font-semibold">Field Value</label>
-            <Select
-              value={filterFieldValue}
-              onChange={setFilterFieldValue}
-              className="w-32"
-            >
-              <SelectItem value="">Any</SelectItem>
-              {(uniqueFieldValues[filterField] || []).map((v) => (
-                <SelectItem key={v} value={v as string}>
-                  {String(v)}
-                </SelectItem>
-              ))}
-            </Select>
-          </div>
-        )}
       </div>
+
+      {/* Advanced Schema Field Filters */}
+      {schemaFieldFilterSection}
 
       {/* Analytics & Visualization Placeholders */}
       <div className="space-y-2">
@@ -353,7 +405,7 @@ export default function Analyze({
                     <details>
                       <summary>Show</summary>
                       <div className="max-w-xs whitespace-pre-wrap text-xs">
-                        {c.ContentText}
+                        {c.Deidentified || <span className="italic text-gray-400">Not de-identified</span>}
                       </div>
                     </details>
                   </td>

@@ -27,7 +27,6 @@ async function deidentifyWithHF(text: string): Promise<string> {
   let deidentified = text;
   if (Array.isArray(result) && result.length > 0 && result[0].entity_group) {
     // Old HF API format (array of entities)
-    // Sort by start descending to avoid messing up indices
     const entities = [...result].sort((a, b) => b.start - a.start);
     for (const ent of entities) {
       deidentified =
@@ -60,7 +59,9 @@ export async function POST(request: NextRequest) {
     // De-identify each case using the HF API
     const deidentifiedCases = [];
     for (const caseData of cases) {
-      const deid = await deidentifyWithHF(caseData.ContentText);
+      // Use ContentText_DEID if present, else ContentText
+      const text = caseData.ContentText_DEID || caseData.ContentText;
+      const deid = await deidentifyWithHF(text);
       deidentifiedCases.push({
         ...caseData,
         Deidentified: deid,

@@ -3,6 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
 import * as XLSX from "xlsx";
+import { Loader2 } from "lucide-react";
 
 type FieldType = "radio" | "list";
 
@@ -43,6 +44,7 @@ export default function SchemaEditor({
   const [genMsg, setGenMsg] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [parsedRows, setParsedRows] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch available schemas on mount
@@ -149,43 +151,38 @@ export default function SchemaEditor({
     }));
   }
 
-  // --- HuggingFace Schema Generation Integration ---
-  async function handleGenerateSchemaFromCases(cases: any[]) {
+  // --- Schema Generation Integration (manual trigger) ---
+  function parseFileAndStoreRows(file: File) {
     setGenMsg(null);
-    if (!cases || cases.length === 0) {
-      setGenMsg("No cases to generate schema from.");
-      return;
-    }
-    setGenerating(true);
-    try {
-      const res = await fetch("/api/generate-schema", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cases: cases.slice(0, 20), // Limit for prompt size
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to generate schema.");
-      }
-      const data = await res.json();
-      setSchema(data.schema);
-      setGenMsg("✅ Schema generated from uploaded file!");
-    } catch (err: any) {
-      setGenMsg(err.message || "Failed to generate schema.");
-    }
     setGenerating(false);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = evt.target?.result;
+        const workbook = XLSX.read(data, { type: "binary" });
+        const sheetName = workbook.SheetNames[0];
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+        setParsedRows(rows);
+        setGenMsg(`Parsed ${rows.length} rows. Ready to generate schema.`);
+      } catch (err: any) {
+        setGenMsg("Failed to parse file for schema generation.");
+        setParsedRows([]);
+      }
+    };
+    reader.onerror = () => {
+      setGenMsg("Failed to read file.");
+      setParsedRows([]);
+    };
+    reader.readAsBinaryString(file);
   }
 
-  // Handle file drop for schema generation
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     setDragActive(false);
     const file = e.dataTransfer.files?.[0];
     if (file) {
       setUploadedFile(file);
-      parseFileAndGenerateSchema(file);
+      parseFileAndStoreRows(file);
     }
   }
 
@@ -203,34 +200,38 @@ export default function SchemaEditor({
     const file = e.target.files?.[0];
     if (file) {
       setUploadedFile(file);
-      parseFileAndGenerateSchema(file);
+      parseFileAndStoreRows(file);
     }
   }
 
-  function parseFileAndGenerateSchema(file: File) {
+  async function handleGenerateSchemaFromParsedRows() {
     setGenMsg(null);
+    if (!parsedRows || parsedRows.length === 0) {
+      setGenMsg("No rows parsed from file.");
+      return;
+    }
     setGenerating(true);
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const data = evt.target?.result;
-        const workbook = XLSX.read(data, { type: "binary" });
-        const sheetName = workbook.SheetNames[0];
-        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
-        handleGenerateSchemaFromCases(rows);
-      } catch (err: any) {
-        setGenMsg("Failed to parse file for schema generation.");
-        setGenerating(false);
+    try {
+      const res = await fetch("/api/generate-schema", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cases: parsedRows.slice(0, 20), // Limit for prompt size
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to generate schema.");
       }
-    };
-    reader.onerror = () => {
-      setGenMsg("Failed to read file.");
-      setGenerating(false);
-    };
-    reader.readAsBinaryString(file);
+      const data = await res.json();
+      setSchema(data.schema);
+      setGenMsg("✅ Schema generated from uploaded file!");
+    } catch (err: any) {
+      setGenMsg(err.message || "Failed to generate schema.");
+    }
+    setGenerating(false);
   }
-
-  // --- End HuggingFace Integration ---
+  // --- End Schema Generation Integration ---
 
   return (
     <Card>
@@ -279,7 +280,7 @@ export default function SchemaEditor({
             className="w-full md:w-1/2"
           />
         </div>
-        {/* HuggingFace Schema Generation Section */}
+        {/* Schema Generation Section */}
         <div className="mb-6">
           <div className="font-semibold mb-2">Generate Schema from Uploaded File</div>
           <div
@@ -315,6 +316,16 @@ export default function SchemaEditor({
               </span>
             )}
             <div className="text-xs text-gray-400 mt-1">Accepted: .xlsx, .xls, .csv</div>
+          </div>
+          <div className="flex items-center gap-2 mt-3">
+            <Button
+              type="button"
+              onClick={handleGenerateSchemaFromParsedRows}
+              disabled={generating || !parsedRows.length}
+            >
+              {generating && <Loader2 className="animate-spin w-4 h-4 mr-2" />}
+              Generate Schema
+            </Button>
           </div>
           <div className="text-xs mt-2 text-gray-500">
             This will use the GPT4 model and up to 20 rows from the uploaded file to suggest a schema.

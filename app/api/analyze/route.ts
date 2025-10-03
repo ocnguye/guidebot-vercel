@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonrepair } from "jsonrepair";
 
 const OPENAI_API_KEY = process.env.OPENAI_KEY;
 const MODEL = "gpt-4o"; // or "gpt-4", "gpt-3.5-turbo", etc.
@@ -15,7 +16,7 @@ ${report}
 Schema:
 ${JSON.stringify(schema, null, 2)}
 
-Return your answer in this format:
+Return your answer in this format (respond with ONLY valid JSON, no explanation, no markdown, no extra text):
 {
   "Pathology Presence": "Present" or "Not Present",
   "Schema": {
@@ -66,11 +67,34 @@ export async function POST(req: NextRequest) {
         let extractedSchema = {};
         try {
           content = await openaiChatCompletion(prompt);
-          const parsed = typeof content === "string" ? JSON.parse(content) : content;
+          let parsed;
+          try {
+            parsed = typeof content === "string" ? JSON.parse(content) : content;
+          } catch {
+            // Try to repair JSON if parsing fails
+            try {
+              parsed = JSON.parse(jsonrepair(content));
+            } catch {
+              // Try to extract JSON from within the text (e.g., markdown/code block)
+              const match = content.match(/{[\s\S]*}/);
+              if (match) {
+                try {
+                  parsed = JSON.parse(jsonrepair(match[0]));
+                } catch {
+                  throw new Error("No valid JSON found in model output");
+                }
+              } else {
+                throw new Error("No JSON found in model output");
+              }
+            }
+          }
           presence = parsed["Pathology Presence"] || "Unknown";
           extractedSchema = parsed["Schema"] || {};
-        } catch {
+          // Log to console for debugging
+          console.log(`Accession: ${caseData.AccessionNumber || "N/A"} | Presence: ${presence}`);
+        } catch (err) {
           // fallback: try to extract with regex or leave as unknown
+          console.warn(`Failed to parse model output for Accession: ${caseData.AccessionNumber || "N/A"}`);
         }
 
         // Calculate completion
