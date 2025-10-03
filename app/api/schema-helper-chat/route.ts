@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { HfInference } from "@huggingface/inference";
 
-const HF_TOKEN = process.env.GUIDEBOT_TOKEN;
-const MODEL = "Qwen/Qwen3-Next-80B-A3B-Instruct";
+const OPENAI_API_KEY = process.env.OPENAI_KEY;
+const MODEL = "gpt-4o"; // or "gpt-4", "gpt-3.5-turbo"
 
 const baseSystemPrompt = `
 You are a helpful assistant for designing medical data extraction schemas.
@@ -19,11 +18,9 @@ export async function POST(req: NextRequest) {
   try {
     const { messages, currentSchema } = await req.json();
 
-    if (!HF_TOKEN) {
-      return NextResponse.json({ error: "No Hugging Face token set." }, { status: 500 });
+    if (!OPENAI_API_KEY) {
+      return NextResponse.json({ error: "No OpenAI API key set." }, { status: 500 });
     }
-
-    const hf = new HfInference(HF_TOKEN);
 
     // Optionally include current schema in the system prompt for context
     let systemPrompt = baseSystemPrompt;
@@ -31,23 +28,38 @@ export async function POST(req: NextRequest) {
       systemPrompt += `\n\nCurrent schema fields:\n${JSON.stringify(currentSchema, null, 2)}\n\nSuggest only new fields or improvements.`;
     }
 
-    // Prepare chat messages for chatCompletion
+    // Prepare chat messages for OpenAI
     const chatMessages = [
       { role: "system", content: systemPrompt },
       ...messages,
     ];
 
-    // Call chatCompletion (make sure your model supports this task)
-    const response = await hf.chatCompletion({
-      model: MODEL,
-      messages: chatMessages,
-      parameters: {
-        max_new_tokens: 512,
-        temperature: 0.3,
+    // Call OpenAI Chat Completion API
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
       },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: chatMessages,
+        max_tokens: 512,
+        temperature: 0.3,
+      }),
     });
 
-    const reply = response.choices?.[0]?.message?.content || "";
+    if (!response.ok) {
+      const errText = await response.text();
+      return NextResponse.json({ error: `OpenAI API error: ${errText}` }, { status: 500 });
+    }
+
+    const data = await response.json();
+    const reply: string =
+      data.choices?.[0]?.message?.content ||
+      data.generated_text ||
+      data.choices?.[0]?.generated_text ||
+      "";
 
     // Extract JSON from markdown code block if present
     const match = reply.match(/```json\s*([\s\S]*?)```/);

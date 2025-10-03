@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { HfInference } from "@huggingface/inference";
 import { loadReports, retrieveRelevantReports } from "../../../lib/reports";
 
 // Types
@@ -13,34 +12,13 @@ interface MedicalModel {
   description: string;
 }
 
-// Globals
-let hf: HfInference | null = null;
-let initialized: boolean = false;
-
-// Medical model configuration - Updated to Qwen 3
+// OpenAI model configuration
 const getMedicalModel = (): MedicalModel => ({
-  name: 'Qwen/Qwen3-Next-80B-A3B-Instruct',
-  description: 'Qwen 3 Next 80B A3B Instruct - Advanced instruction-following model'
+  name: 'gpt-4o', // or 'gpt-4', 'gpt-3.5-turbo'
+  description: 'OpenAI GPT-4o - Advanced instruction-following model'
 });
 
-// Initialize HF Inference
-const initHFInference = (): boolean => {
-  const token = process.env.GUIDEBOT_TOKEN;
-  
-  if (!token) {
-    console.error("No Hugging Face token found. Please set HF_TOKEN in .env.local");
-    return false;
-  }
-
-  try {
-    hf = new HfInference(token);
-    console.log("Hugging Face Inference API initialized");
-    return true;
-  } catch (error: any) {
-    console.error("Failed to initialize HF Inference:", error);
-    return false;
-  }
-};
+const OPENAI_API_KEY = process.env.OPENAI_KEY;
 
 // Create system and user messages for chat completion
 type ChatRole = "system" | "user" | "assistant";
@@ -52,7 +30,7 @@ interface ChatMessage {
 
 function createChatMessages(query: string, context: string, conversationHistory: Array<{ role: string; text: string }> = []): ChatMessage[] {
   const limitedContext = context.substring(0, 2000);
-  
+
   const messages: ChatMessage[] = [
     {
       role: "system",
@@ -82,31 +60,40 @@ function createChatMessages(query: string, context: string, conversationHistory:
   return messages;
 }
 
-// Generate response using Qwen3 via chat completion
-async function generateWithQwen3(messages: any[], model: MedicalModel): Promise<string> {
-  if (!hf) throw new Error("HF Inference not initialized");
+// Generate response using OpenAI GPT-4
+async function generateWithOpenAI(messages: any[], model: MedicalModel): Promise<string> {
+  if (!OPENAI_API_KEY) throw new Error("OpenAI API key not set");
 
   try {
-    console.log(`Generating with ${model.name}...`);
-    
-    const response = await hf.chatCompletion({
-      model: model.name,
-      messages: messages,
-      max_tokens: 800,
-      temperature: 0.1, // Low temperature for medical accuracy
-      top_p: 0.9,
-      stop: ["Question:", "Context:", "Human:", "User:"]
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: model.name,
+        messages: messages,
+        max_tokens: 800,
+        temperature: 0.1,
+        top_p: 0.9,
+        stop: ["Question:", "Context:", "Human:", "User:"]
+      }),
     });
-    
-    return response.choices[0]?.message?.content || "";
-    
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || "";
   } catch (error: any) {
     console.error(`Generation failed with ${model.name}:`, error.message);
     throw error;
   }
 }
 
-// Clean response for Qwen3 output
+// Clean response for OpenAI output
 function cleanResponse(response: string): string {
   return response
     .trim()
@@ -122,22 +109,18 @@ function cleanResponse(response: string): string {
 }
 
 // Initialization
+let initialized = false;
 const init = async (): Promise<void> => {
   if (initialized) return;
-  
+
   try {
     console.log("Initializing Medical AI System...");
-    
-    if (!initHFInference()) {
-      throw new Error("Failed to initialize Hugging Face API");
-    }
-    
+
     console.log("Loading medical reports database...");
     await loadReports();
-    
+
     initialized = true;
-    console.log("Medical AI System initialized with Qwen3-Next-80B-A3B-Instruct");
-    
+    console.log("Medical AI System initialized with OpenAI GPT-4");
   } catch (error: any) {
     console.error("Initialization failed:", error);
     throw error;
@@ -149,7 +132,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body: RequestBody = await req.json();
     const { query, conversationHistory = [] } = body;
-    
+
     if (!query || typeof query !== "string" || query.trim().length === 0) {
       return NextResponse.json({ error: "Valid query required" }, { status: 400 });
     }
@@ -178,10 +161,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // Generate response with conversation context
     const model = getMedicalModel();
     const messages = createChatMessages(query, contextText, conversationHistory);
-    
-    const response = await generateWithQwen3(messages, model);
+
+    const response = await generateWithOpenAI(messages, model);
     const cleanedResponse = cleanResponse(response);
-    
+
     return NextResponse.json({
       result: cleanedResponse,
       model_used: model.name,
@@ -190,7 +173,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   } catch (err: any) {
     console.error("API error:", err);
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: `Failed to process medical query: ${err.message}`
     }, { status: 500 });
   }

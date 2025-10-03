@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { HfInference } from "@huggingface/inference";
 
-const HF_TOKEN = process.env.GUIDEBOT_TOKEN;
-const MODEL = "Qwen/Qwen3-Next-80B-A3B-Instruct";
+const OPENAI_API_KEY = process.env.OPENAI_KEY;
+const MODEL = "gpt-4o"; // or "gpt-4", "gpt-3.5-turbo", etc.
 
 function buildPrompt(report: string, schema: any) {
   return `Please answer the following questions based on the radiology report below.
@@ -27,13 +26,35 @@ Return your answer in this format:
 }`;
 }
 
+async function openaiChatCompletion(prompt: string) {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 512,
+      temperature: 0,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`OpenAI API error: ${res.statusText}`);
+  }
+
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || "";
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { cases, schema } = await req.json();
-    if (!HF_TOKEN) {
-      return NextResponse.json({ error: "No Hugging Face token set." }, { status: 500 });
+    if (!OPENAI_API_KEY) {
+      return NextResponse.json({ error: "No OpenAI API key set." }, { status: 500 });
     }
-    const hf = new HfInference(HF_TOKEN);
 
     // Batch process all cases in parallel
     const results = await Promise.all(
@@ -44,12 +65,7 @@ export async function POST(req: NextRequest) {
         let presence = "Unknown";
         let extractedSchema = {};
         try {
-          const response = await hf.chatCompletion({
-            model: MODEL,
-            messages: [{ role: "user", content: prompt }],
-            parameters: { max_new_tokens: 512, temperature: 0 },
-          });
-          content = response.choices?.[0]?.message?.content || "";
+          content = await openaiChatCompletion(prompt);
           const parsed = typeof content === "string" ? JSON.parse(content) : content;
           presence = parsed["Pathology Presence"] || "Unknown";
           extractedSchema = parsed["Schema"] || {};

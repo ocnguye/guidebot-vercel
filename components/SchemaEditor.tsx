@@ -317,7 +317,7 @@ export default function SchemaEditor({
             <div className="text-xs text-gray-400 mt-1">Accepted: .xlsx, .xls, .csv</div>
           </div>
           <div className="text-xs mt-2 text-gray-500">
-            This will use the HuggingFace Qwen3 model and up to 20 rows from the uploaded file to suggest a schema.
+            This will use the GPT4 model and up to 20 rows from the uploaded file to suggest a schema.
           </div>
           {genMsg && (
             <div className={`mt-2 text-sm ${genMsg.startsWith("✅") ? "text-green-700" : "text-red-700"}`}>
