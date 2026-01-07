@@ -106,6 +106,85 @@ async function generateWithOpenAI(messages: any[], model: MedicalModel): Promise
   }
 }
 
+// --- Chunking helpers (minimal changes approach) ---
+// Split text into chunks by paragraphs with a max char size (simple heuristic)
+function splitIntoChunks(text: string, maxChars = 2000): string[] {
+  if (!text) return [];
+  const paragraphs = text.split(/\n{1,}/).map(p => p.trim()).filter(Boolean);
+  const chunks: string[] = [];
+  let current = '';
+  for (const para of paragraphs) {
+    if ((current + '\n\n' + para).length <= maxChars) {
+      current = current ? (current + '\n\n' + para) : para;
+    } else {
+      if (current) { chunks.push(current); }
+      if (para.length <= maxChars) {
+        current = para;
+      } else {
+        // Hard split very long paragraph
+        for (let i = 0; i < para.length; i += maxChars) {
+          chunks.push(para.slice(i, i + maxChars));
+        }
+        current = '';
+      }
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+// Simple concurrency limiter for promises (no external dependency)
+async function runWithConcurrency<T>(items: T[], worker: (item: T) => Promise<any>, concurrency = 3) {
+  const results: any[] = [];
+  let i = 0;
+  const runners: Promise<void>[] = [];
+
+  async function run() {
+    while (true) {
+      const idx = i++;
+      if (idx >= items.length) break;
+      try {
+        const res = await worker(items[idx]);
+        results[idx] = res;
+      } catch (e) {
+        results[idx] = e;
+      }
+    }
+  }
+
+  for (let j = 0; j < Math.min(concurrency, items.length); j++) runners.push(run());
+  await Promise.all(runners);
+  return results;
+}
+
+// Call OpenAI for each chunk (bounded concurrency) and return array of responses
+async function callOpenAIForChunks(chunkTexts: string[], question: string, model: MedicalModel, concurrency = 3) {
+  const capped = chunkTexts.slice(0, 8); // cap to avoid too many parallel calls
+  const worker = async (chunk: string) => {
+    const messages = [
+      { role: 'system', content: 'You are a radiology assistant. Extract the most relevant findings from the report chunk.' },
+      { role: 'user', content: `Report chunk:\n\n${chunk}\n\nQuestion: ${question}\n\nProvide a concise extract (1-3 sentences) or the most relevant text.` }
+    ];
+    const resp = await generateWithOpenAI(messages, model);
+    return resp.trim();
+  };
+
+  const responses = await runWithConcurrency(capped, worker, concurrency);
+  return responses.map(r => (typeof r === 'string' ? r : '')); // convert errors to empty strings for synth
+}
+
+// Synthesize chunk responses into a single coherent answer using the same model
+async function synthesizeChunkResponses(chunkResponses: string[], question: string, model: MedicalModel) {
+  const nonEmpty = chunkResponses.filter(Boolean).map((r, i) => `Chunk ${i + 1}: ${r}`).join('\n\n');
+  const synthMessages = [
+    { role: 'system', content: 'You are a radiology assistant that consolidates multiple findings into a single structured answer.' },
+    { role: 'user', content: `Question: ${question}\n\nFindings from chunks:\n\n${nonEmpty}\n\nPlease provide a single, structured, and complete answer. Use bullets for equipment and numbers for steps.` }
+  ];
+
+  const final = await generateWithOpenAI(synthMessages, model);
+  return final.trim();
+}
+
 // Clean response for OpenAI output
 function cleanResponse(response: string): string {
   return response
@@ -173,10 +252,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // Generate response with conversation context
     const model = getMedicalModel();
-    const messages = createChatMessages(query, contextText, conversationHistory);
+    // If context is large, use chunking strategy (minimal change):
+    const MAX_CONTEXT_CHARS = 2500;
+    const CHUNK_MAX_CHARS = 1800;
+    const CHUNK_CONCURRENCY = 3;
 
-    const response = await generateWithOpenAI(messages, model);
-    const cleanedResponse = cleanResponse(response);
+    let rawResponse: string;
+    if (contextText.length > MAX_CONTEXT_CHARS) {
+      const chunks = splitIntoChunks(contextText, CHUNK_MAX_CHARS);
+      console.log(`Context large (${contextText.length} chars). Using ${chunks.length} chunks (capped to 8).`);
+      const chunkResponses = await callOpenAIForChunks(chunks, query, model, CHUNK_CONCURRENCY);
+      rawResponse = await synthesizeChunkResponses(chunkResponses, query, model);
+    } else {
+      const messages = createChatMessages(query, contextText, conversationHistory);
+      rawResponse = await generateWithOpenAI(messages, model);
+    }
+
+    const cleanedResponse = cleanResponse(rawResponse);
 
     return NextResponse.json({
       result: cleanedResponse,
