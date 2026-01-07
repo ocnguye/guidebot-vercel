@@ -20,6 +20,47 @@ const getMedicalModel = (): MedicalModel => ({
 
 const OPENAI_API_KEY = process.env.OPENAI_KEY;
 
+// Simple in-memory cache for OpenAI responses (keyed by messages JSON)
+type CacheEntry = { value: string; expiresAt: number };
+const completionCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 1000 * 60 * 60; // 1 hour
+
+function cacheGet(key: string): string | null {
+  const e = completionCache.get(key);
+  if (!e) return null;
+  if (Date.now() > e.expiresAt) {
+    completionCache.delete(key);
+    return null;
+  }
+  return e.value;
+}
+
+function cacheSet(key: string, value: string) {
+  completionCache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
+// simple sleep
+function sleep(ms: number) { return new Promise(res => setTimeout(res, ms)); }
+
+// retry wrapper for transient errors
+async function withRetry<T>(fn: ()=>Promise<T>, retries = 3, baseDelay = 300): Promise<T> {
+  let lastErr: any;
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastErr = err;
+      const status = err?.status || (err?.message && /OpenAI API error (\d+)/.exec(err.message)?.[1]);
+      const statusNum = status ? Number(status) : undefined;
+      // Only retry on transient conditions or network errors
+      if (i === retries - 1 || (statusNum && ![429, 502, 503, 504].includes(statusNum))) break;
+      const delay = Math.pow(2, i) * baseDelay + Math.random() * 100;
+      await sleep(delay);
+    }
+  }
+  throw lastErr;
+}
+
 // Create system and user messages for chat completion
 type ChatRole = "system" | "user" | "assistant";
 
@@ -67,43 +108,53 @@ function createChatMessages(query: string, context: string, conversationHistory:
 async function generateWithOpenAI(messages: any[], model: MedicalModel): Promise<string> {
   if (!OPENAI_API_KEY) throw new Error("OpenAI API key not set");
 
-  try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: model.name,
-        messages: messages,
-        max_tokens: 800,
-        temperature: 0.1,
-        top_p: 0.9,
-        stop: ["Question:", "Context:", "Human:", "User:"]
-      }),
-    });
+  // Build cache key
+  const cacheKey = JSON.stringify(messages.map((m: any) => ({ role: m.role, content: m.content })));
+  const cached = cacheGet(cacheKey);
+  if (cached) return cached;
 
-    if (!response.ok) {
-      // Try to read response body for more detailed error info
-      let bodyText: string;
-      try {
-        bodyText = await response.text();
-      } catch (e) {
-        bodyText = `<unable to read body: ${String(e)}>`;
+  // Prepare fetch with timeout and retry
+  const doFetch = async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000); // 10s
+    try {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: model.name,
+          messages: messages,
+          max_tokens: 800,
+          temperature: 0.1,
+          top_p: 0.9,
+          stop: ["Question:", "Context:", "Human:", "User:"]
+        }),
+        signal: controller.signal as any
+      });
+
+      if (!response.ok) {
+        let bodyText: string;
+        try { bodyText = await response.text(); } catch (e) { bodyText = `<unable to read body: ${String(e)}>`; }
+        const errMsg = `OpenAI API error ${response.status} ${response.statusText}: ${bodyText}`;
+        const err: any = new Error(errMsg);
+        err.status = response.status;
+        throw err;
       }
 
-      const errMsg = `OpenAI API error ${response.status} ${response.statusText}: ${bodyText}`;
-      console.error(errMsg);
-      throw new Error(errMsg);
+      const data = await response.json();
+      const result = data.choices?.[0]?.message?.content || "";
+      try { cacheSet(cacheKey, result); } catch (e) { /* ignore */ }
+      return result;
+    } finally {
+      clearTimeout(timeout);
     }
+  };
 
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || "";
-  } catch (error: any) {
-    console.error(`Generation failed with ${model.name}:`, error?.message || error);
-    throw error;
-  }
+  const text = await withRetry(doFetch, 3, 500);
+  return text;
 }
 
 // --- Chunking helpers (minimal changes approach) ---
