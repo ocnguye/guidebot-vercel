@@ -39,12 +39,15 @@ function createChatMessages(query: string, context: string, conversationHistory:
   ];
 
   // Add conversation history (last few exchanges for context)
-  conversationHistory.slice(-4).forEach(msg => {
-    messages.push({
+  // Sanitize conversation history: ensure content is a non-null string and skip empty entries
+  const safeHistory = conversationHistory.slice(-4)
+    .map(msg => ({
       role: msg.role === "user" ? "user" : "assistant",
-      content: msg.text
-    });
-  });
+      content: typeof msg.text === 'string' ? msg.text.trim() : ''
+    }))
+    .filter(m => m.content.length > 0);
+
+  safeHistory.forEach(msg => messages.push({ role: msg.role as ChatRole, content: msg.content }));
 
   // Add current query with context
   messages.push({
@@ -82,13 +85,23 @@ async function generateWithOpenAI(messages: any[], model: MedicalModel): Promise
     });
 
     if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.statusText}`);
+      // Try to read response body for more detailed error info
+      let bodyText: string;
+      try {
+        bodyText = await response.text();
+      } catch (e) {
+        bodyText = `<unable to read body: ${String(e)}>`;
+      }
+
+      const errMsg = `OpenAI API error ${response.status} ${response.statusText}: ${bodyText}`;
+      console.error(errMsg);
+      throw new Error(errMsg);
     }
 
     const data = await response.json();
     return data.choices?.[0]?.message?.content || "";
   } catch (error: any) {
-    console.error(`Generation failed with ${model.name}:`, error.message);
+    console.error(`Generation failed with ${model.name}:`, error?.message || error);
     throw error;
   }
 }

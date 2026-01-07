@@ -1,23 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const HF_TOKEN = process.env.GUIDEBOT_TOKEN; // Set this in your .env file
-const MODEL = "StanfordAIMI/stanford-deidentifier-base"; // <-- updated model name
+// Accept multiple env var names for the Hugging Face token
+const HF_TOKEN = process.env.GUIDEBOT_TOKEN;
+const MODEL = "StanfordAIMI/stanford-deidentifier-base"; // allow override via env
 
 async function deidentifyWithHF(text: string): Promise<string> {
-  const response = await fetch(
-    `https://api-inference.huggingface.co/models/${MODEL}`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${HF_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ inputs: text }),
-    }
-  );
+  if (!HF_TOKEN) {
+    throw new Error('No Hugging Face token configured for de-identification');
+  }
+
+  const endpoint = `https://router.huggingface.co/hf-inference/models/${MODEL}`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${HF_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ inputs: text }),
+  });
 
   if (!response.ok) {
-    throw new Error(`HF API error: ${response.statusText}`);
+    // Try to get response body for more details (Hugging Face often returns useful JSON)
+    let bodyText = '';
+    try {
+      bodyText = await response.text();
+    } catch (e) {
+      bodyText = `<unable to read body: ${String(e)}>`;
+    }
+    const err = `HF API error ${response.status} ${response.statusText}: ${bodyText}`;
+    console.error(err);
+    throw new Error(err);
   }
 
   const result = await response.json();
