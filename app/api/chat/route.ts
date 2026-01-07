@@ -139,10 +139,10 @@ function cleanResponse(response: string): string {
       continue;
     }
 
-    // First bullet after a header → convert to numbered step
+    // First bullet after a header → convert to numbered step and put step name and first bullet on same line
     if (pendingHeader && line.trim().startsWith('•')) {
-      result.push(`${stepCounter}. ${pendingHeader}:`);
-      result.push(line);
+      // Combine header and first bullet into one line: "1. Header: • first bullet"
+      result.push(`${stepCounter}. ${pendingHeader}: ${line.trim()}`);
       stepCounter++;
       pendingHeader = null;
       continue;
