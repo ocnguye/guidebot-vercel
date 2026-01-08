@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { loadReports, retrieveRelevantReports } from "../../../lib/reports";
 
-export const runtime = "nodejs";
-export const maxDuration = 60;
-
 // Types
 interface RequestBody {
   query: string;
@@ -111,47 +108,17 @@ async function generateWithOpenAI(messages: any[], model: MedicalModel): Promise
 
 // Clean response for OpenAI output
 function cleanResponse(response: string): string {
-  // First: basic cleanup (your existing logic)
-  let text = response
+  return response
     .trim()
-    .replace(/^(Answer:|Response:|Assistant:|AI:)\s*/i, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/^\s*[\-\*]\s*/, '')
-    .replace(/^(Assistant|Model|GuideBot):\s*/i, '')
-    .replace(/\*\*(.*?)\*\*/g, '**$1**')
-    .replace(/^\s*\d+\.\s/gm, '$&')
-    .replace(/^\s*-\s/gm, '$&')
+    .replace(/^(Answer:|Response:|Assistant:|AI:)\s*/i, '') // Remove answer prefixes
+    .replace(/\n{3,}/g, '\n\n') // Limit consecutive line breaks
+    .replace(/^\s*[\-\*]\s*/, '') // Remove leading bullet points
+    .replace(/^(Assistant|Model|GuideBot):\s*/i, '') // Remove model prefixes
+    // Keep markdown formatting for lists and structure
+    .replace(/\*\*(.*?)\*\*/g, '**$1**') // Preserve bold formatting
+    .replace(/^\s*\d+\.\s/gm, '$&') // Preserve numbered lists
+    .replace(/^\s*-\s/gm, '$&') // Preserve bullet points
     .trim();
-
-  // Second: normalize procedural step formatting
-  const lines = text.split('\n');
-  const result: string[] = [];
-
-  let stepCounter = 1;
-  let pendingHeader: string | null = null;
-
-  for (const line of lines) {
-    const headerMatch = line.match(/^([A-Z][A-Za-z\s\-]+):\s*$/);
-
-    // Detect section headers like "Preparation:"
-    if (headerMatch) {
-      pendingHeader = headerMatch[1];
-      continue;
-    }
-
-    // First bullet after a header → convert to numbered step and put step name and first bullet on same line
-    if (pendingHeader && line.trim().startsWith('•')) {
-      // Combine header and first bullet into one line: "1. Header: • first bullet"
-      result.push(`${stepCounter}. ${pendingHeader}: ${line.trim()}`);
-      stepCounter++;
-      pendingHeader = null;
-      continue;
-    }
-
-    result.push(`   ${line}`);
-  }
-
-  return result.join('\n').trim();
 }
 
 // Initialization
