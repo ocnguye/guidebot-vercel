@@ -18,43 +18,46 @@ export default function UploadExcel({ onUploadSuccess }: UploadExcelProps) {
     e.preventDefault();
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append("file", file);
-
-    setStatus("📤 Uploading...");
+    setStatus("📤 Uploading file...");
     setCases([]);
     setDownloadUrl(null);
 
-    const res = await fetch("/api/upload", {
-      method: "POST",
-      body: formData,
-    });
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
 
-    const data = await res.json();
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
 
-    if (!res.ok) {
-      setStatus(`❌ ${data.error}`);
-      return;
+      const data = await res.json();
+
+      if (!res.ok) {
+        setStatus(`❌ Upload failed: ${data?.error || res.status}`);
+        return;
+      }
+
+      const casesWithFilename = (data.cases || []).map((c: any) => ({
+        ...c,
+        __filename: file.name,
+      }));
+
+      setStatus("✅ File uploaded and processed!");
+      setCases(casesWithFilename);
+      setDownloadUrl(data.fileUrl);
+
+      if (onUploadSuccess) onUploadSuccess(casesWithFilename, file.name);
+    } catch (err: any) {
+      console.error(err);
+      setStatus(`❌ Unexpected error: ${err.message || err}`);
     }
-
-    // Add filename to each case
-    const casesWithFilename = (data.cases || []).map((c: any) => ({
-      ...c,
-      __filename: file.name,
-    }));
-
-    setStatus("✅ File processed successfully!");
-    setCases(casesWithFilename);
-    setDownloadUrl(data.fileUrl);
-    if (onUploadSuccess) onUploadSuccess(casesWithFilename, file.name);
   }
 
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0]);
-    }
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
   }
 
   function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
@@ -68,16 +71,13 @@ export default function UploadExcel({ onUploadSuccess }: UploadExcelProps) {
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-    }
+    if (e.target.files && e.target.files[0]) setFile(e.target.files[0]);
   }
 
   return (
     <div className="flex justify-center items-center min-h-[300px]">
       <div className="p-4 border rounded-lg shadow-md max-w-lg w-full">
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-          {/* Drop area */}
           <div
             className={`flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-6 cursor-pointer transition-colors ${
               dragActive ? "border-blue-500 bg-blue-50" : "border-gray-300"
@@ -95,7 +95,8 @@ export default function UploadExcel({ onUploadSuccess }: UploadExcelProps) {
               onChange={handleFileChange}
             />
             <span className="text-gray-600 mb-2">
-              Drag & drop your Excel or CSV file here, or <span className="underline text-blue-600">click to select</span>
+              Drag & drop your Excel or CSV file here, or{" "}
+              <span className="underline text-blue-600">click to select</span>
             </span>
             <span className="text-xs text-gray-400">Accepted: .xlsx, .xls, .csv</span>
             {file && (
@@ -143,9 +144,7 @@ export default function UploadExcel({ onUploadSuccess }: UploadExcelProps) {
                 {cases.slice(0, 5).map((c, i) => (
                   <tr key={i}>
                     <td className="border px-2 py-1">{c.AccessionNumber}</td>
-                    <td className="border px-2 py-1 truncate max-w-xs">
-                      {c.ContentText}
-                    </td>
+                    <td className="border px-2 py-1 truncate max-w-xs">{c.ContentText}</td>
                   </tr>
                 ))}
               </tbody>

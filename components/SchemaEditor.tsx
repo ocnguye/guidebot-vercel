@@ -33,8 +33,9 @@ export default function SchemaEditor({
   setSchema,
   uploadedCases = [],
 }: SchemaEditorProps) {
+  const [selectedSchemaName, setSelectedSchemaName] = useState("");
   const [schemaName, setSchemaName] = useState("");
-  const [availableSchemas, setAvailableSchemas] = useState<string[]>([]);
+  const [availableSchemas, setAvailableSchemas] = useState<Array<{ name: string; blobUrl?: string | null; blobId?: string | null; source?: string }>>([]);
   const [newField, setNewField] = useState("");
   const [newType, setNewType] = useState<FieldType>("radio");
   const [newDescription, setNewDescription] = useState("");
@@ -50,24 +51,109 @@ export default function SchemaEditor({
   // Fetch available schemas on mount
   useEffect(() => {
     fetch("/api/schemas")
-      .then(res => res.json())
-      .then(setAvailableSchemas);
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Failed to list schemas");
+        return res.json();
+      })
+      .then((data) => {
+        let schemas: Array<{ name: string }> = [];
+
+        if (Array.isArray(data)) {
+          if (typeof data[0] === "string") {
+            schemas = data.map(n => ({ name: n }));
+          } else {
+            schemas = data;
+          }
+        }
+
+        // ✅ FILTER OUT BLANK / INVALID NAMES
+        schemas = schemas.filter(
+          s => typeof s.name === "string" && s.name.trim().length > 0
+        );
+
+        setAvailableSchemas(schemas);
+      })
+      .catch(err => {
+        console.error("Failed to fetch schemas", err);
+        setAvailableSchemas([]);
+      });
   }, []);
 
   // Load schema when schemaName changes and matches an existing schema
   useEffect(() => {
-    if (schemaName && availableSchemas.includes(schemaName)) {
-      fetch(`/api/schemas?name=${encodeURIComponent(schemaName)}`)
-        .then(res => res.json())
-        .then(data => {
-          setSchema(data);
-          setCollapsedFields({});
-        });
-    } else if (!schemaName) {
+    if (!selectedSchemaName) {
+      // New schema mode
       setSchema({});
+      setSchemaName("");
       setCollapsedFields({});
+      return;
     }
-  }, [schemaName, availableSchemas, setSchema]);
+
+    fetch(`/api/schemas?name=${encodeURIComponent(selectedSchemaName)}`)
+      .then(async (res) => {
+        if (res.status === 404) {
+          setSchema({});
+          setSchemaName(selectedSchemaName);
+          setCollapsedFields({});
+          return null;
+        }
+
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(text || "Failed to load schema");
+        }
+
+        return res.json();
+      })
+      .then((data) => {
+        if (!data) return;
+        // ✅ NORMALIZE API RESPONSE HERE
+        let resolvedSchema: any = data.schema ?? data.fields ?? data;
+
+        // If the API returned a string, try to parse it
+        if (typeof resolvedSchema === "string") {
+          try {
+            resolvedSchema = JSON.parse(resolvedSchema);
+          } catch (e) {
+            console.warn("Schema response was string but JSON.parse failed", e);
+          }
+        }
+
+        // If the manifest/blob contains a top-level object keyed by the schema name
+        // e.g. { "CPAM": { ... } }, unwrap it.
+        if (
+          resolvedSchema &&
+          typeof resolvedSchema === "object" &&
+          !Array.isArray(resolvedSchema)
+        ) {
+          const keys = Object.keys(resolvedSchema);
+          if (
+            keys.length === 1 &&
+            selectedSchemaName &&
+            keys[0].toLowerCase().includes(selectedSchemaName.toLowerCase()) &&
+            typeof resolvedSchema[keys[0]] === "object"
+          ) {
+            resolvedSchema = resolvedSchema[keys[0]];
+          }
+        }
+
+        // Defensive: ensure object
+        if (typeof resolvedSchema !== "object" || Array.isArray(resolvedSchema) || resolvedSchema === null) {
+          console.error("Invalid schema shape returned from /api/schemas?name=", selectedSchemaName, data);
+          setSchema({});
+          return;
+        }
+
+        console.debug("Loaded schema for", selectedSchemaName, resolvedSchema);
+
+        setSchema(resolvedSchema as Schema);
+        setSchemaName(selectedSchemaName);
+        setCollapsedFields({});
+      })
+      .catch((err) => {
+        console.error("Schema load error:", err);
+      });
+  }, [selectedSchemaName]);
 
   function addField() {
     if (!newField.trim() || schema[newField]) return;
@@ -264,13 +350,15 @@ export default function SchemaEditor({
         <div className="mb-6 flex flex-col md:flex-row md:items-center gap-2">
           <label className="text-xs font-semibold md:w-32">Schema Name:</label>
           <select
-            value={schemaName}
-            onChange={e => setSchemaName(e.target.value)}
+            value={selectedSchemaName}
+            onChange={e => setSelectedSchemaName(e.target.value)}
             className="border rounded px-2 py-1 w-full md:w-1/2"
           >
             <option value="">-- New Schema --</option>
-            {availableSchemas.map(name => (
-              <option key={name} value={name}>{name}</option>
+            {availableSchemas.map(s => (
+              <option key={s.name} value={s.name}>
+                {s.name}
+              </option>
             ))}
           </select>
           <Input

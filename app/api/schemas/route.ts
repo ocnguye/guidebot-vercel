@@ -1,60 +1,111 @@
 import { NextRequest, NextResponse } from "next/server";
-import path from "path";
-import fs from "fs/promises";
+import { put, list } from "@vercel/blob";
 
-const SCHEMA_DIR = path.join(process.cwd(), "data", "schemas");
+export const runtime = "nodejs";
 
-// Ensure schema directory exists
-async function ensureSchemaDir() {
-  try {
-    await fs.access(SCHEMA_DIR);
-  } catch {
-    await fs.mkdir(SCHEMA_DIR, { recursive: true });
-  }
+/* ----------------------------------------
+   Helpers
+---------------------------------------- */
+
+function sanitizeName(name: string) {
+  return name.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
+/* ----------------------------------------
+   GET: list schemas OR fetch a schema
+---------------------------------------- */
 export async function GET(request: NextRequest) {
   try {
-    await ensureSchemaDir();
     const { searchParams } = new URL(request.url);
     const name = searchParams.get("name");
 
+    // ------------------------------
+    // Fetch single schema
+    // ------------------------------
     if (name) {
-      // Sanitize name to prevent path traversal
-      const safeName = name.replace(/[^a-zA-Z0-9_\- ]/g, "").replace(/\s+/g, "_");
-      const filePath = path.join(SCHEMA_DIR, `${safeName}.json`);
-      try {
-        const content = await fs.readFile(filePath, "utf8");
-        return NextResponse.json(JSON.parse(content));
-      } catch {
-        return NextResponse.json({ error: "Schema not found" }, { status: 404 });
+      const safeName = sanitizeName(name);
+      const targetPath = `schemas/${safeName}.json`;
+
+      const blobs = await list({ prefix: "schemas/" });
+      const blob = blobs.blobs.find(b => b.pathname === targetPath);
+
+      if (!blob) {
+        return NextResponse.json(
+          { error: "Schema not found" },
+          { status: 404 }
+        );
       }
-    } else {
-      const files = await fs.readdir(SCHEMA_DIR);
-      // Return just the schema names (without .json)
-      const schemas = files
-        .filter((f) => f.endsWith(".json"))
-        .map((f) => f.replace(/\.json$/, ""));
-      return NextResponse.json(schemas);
+
+      const res = await fetch(blob.url, { cache: "no-store" });
+
+      if (!res.ok) {
+        return NextResponse.json(
+          { error: "Failed to fetch schema blob" },
+          { status: 500 }
+        );
+      }
+
+      const schema = await res.json();
+      return NextResponse.json(schema);
     }
+
+    // ------------------------------
+    // List all schemas
+    // ------------------------------
+    const blobs = await list({ prefix: "schemas/" });
+
+    const items = blobs.blobs.map(blob => ({
+      name: blob.pathname
+        .replace("schemas/", "")
+        .replace(/\.json$/, ""),
+      blobUrl: blob.url,
+      size: blob.size,
+      uploadedAt: blob.uploadedAt,
+    }));
+
+    return NextResponse.json(items);
   } catch (error) {
-    return NextResponse.json({ error: "Failed to list schemas" }, { status: 500 });
+    console.error("GET /api/schemas error:", error);
+    return NextResponse.json(
+      { error: "Failed to get schemas" },
+      { status: 500 }
+    );
   }
 }
 
+/* ----------------------------------------
+   POST: upload schema to schemas/
+---------------------------------------- */
+
 export async function POST(request: NextRequest) {
   try {
-    await ensureSchemaDir();
     const { name, schema } = await request.json();
-    if (!name || typeof name !== "string" || !schema || typeof schema !== "object") {
-      return NextResponse.json({ error: "Invalid schema or name" }, { status: 400 });
+
+    if (!name || typeof schema !== "object") {
+      return NextResponse.json(
+        { error: "Invalid name or schema" },
+        { status: 400 }
+      );
     }
-    // Sanitize name to prevent path traversal
-    const safeName = name.replace(/[^a-zA-Z0-9_\- ]/g, "").replace(/\s+/g, "_");
-    const filePath = path.join(SCHEMA_DIR, `${safeName}.json`);
-    await fs.writeFile(filePath, JSON.stringify(schema, null, 2));
-    return NextResponse.json({ success: true });
+
+    const safeName = sanitizeName(name);
+    const pathname = `schemas/${safeName}.json`;
+
+    const blob = await put(pathname, JSON.stringify(schema, null, 2), {
+      access: "public",
+      contentType: "application/json",
+    });
+
+    return NextResponse.json({
+      success: true,
+      name: safeName,
+      blobUrl: blob.url,
+    });
   } catch (error) {
-    return NextResponse.json({ error: "Failed to save schema" }, { status: 500 });
+    console.error(error);
+    return NextResponse.json(
+      { error: "Failed to save schema" },
+      { status: 500 }
+    );
   }
 }
