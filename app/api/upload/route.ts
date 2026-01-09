@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     }
 
     const safeName = file.name.replace(/\s/g, "_");
-    const fileKey = `${BUCKET_FOLDER}/${Date.now()}-${safeName}`;
+    const fileKey = `${BUCKET_FOLDER}/${safeName}`;
     const buffer = Buffer.from(await file.arrayBuffer());
 
     // Upload to Vercel Blob
