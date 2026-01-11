@@ -5,7 +5,7 @@ import { Button } from "@/components/Button";
 import { Select, SelectItem } from "@/components/Select";
 import { Input } from "@/components/Input";
 
-interface UploadedFile {
+export interface UploadedFile {
   name: string;
   blobUrl: string;
   size: number;

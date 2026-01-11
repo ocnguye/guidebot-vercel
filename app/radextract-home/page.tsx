@@ -10,8 +10,10 @@ import UploadExcel from "@/components/UploadFile";
 import SchemaEditor, { Schema } from "@/components/SchemaEditor";
 import SchemaHelperChatbot from "@/components/SchemaHelperChatbot";
 import Analyze from "@/components/Analyze";
+import { UploadedFile } from "@/components/Analyze";
 import Process from "@/components/Process";
 import ExportMarked from "@/components/ExportMarked";
+
 
 interface CaseData {
   AccessionNumber: string
@@ -125,6 +127,18 @@ export default function RadExtractPage() {
       setDeidLoading(false);
     }
   };
+
+  // Helper function to convert CaseData[] to UploadedFile[]
+  function mapCaseDataToUploadedFiles(cases: CaseData[]): UploadedFile[] {
+    return cases.map(c => ({
+      ...c, // keep all existing CaseData fields
+      name: c.__filename || "deidentified_reports.xlsx", // required
+      blobUrl: `/api/files/blob?name=${encodeURIComponent(c.__filename || "deidentified_reports.xlsx")}`, // required
+      size: 0, // placeholder size if unknown
+      uploadedAt: new Date().toISOString(), // current timestamp
+    }));
+  }
+
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -271,11 +285,12 @@ export default function RadExtractPage() {
                 </CardHeader>
                 <CardContent>
                   <Analyze
-                    uploadedData={deidentifiedData}
+                    uploadedData={mapCaseDataToUploadedFiles(deidentifiedData)}
                     lastFileName={deidFileName}
                     availableSchemas={availableSchemas.map(name => ({
                       name,
-                      schema: schemasByName[name] || {}
+                      schema: schemasByName[name] || {},
+                      blobUrl: `/api/schemas/blob?name=${encodeURIComponent(name)}`
                     }))}
                     onProcessed={() => {}}
                     onExportMarked={(cases) => {

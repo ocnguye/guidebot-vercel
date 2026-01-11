@@ -116,20 +116,6 @@ export default function UploadExcel({ onUploadSuccess }: UploadExcelProps) {
 
         <p className="mt-2">{status}</p>
 
-        {downloadUrl && (
-          <p className="mt-2">
-            📂 File saved at:{" "}
-            <a
-              href={downloadUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-600 underline"
-            >
-              {downloadUrl}
-            </a>
-          </p>
-        )}
-
         {cases.length > 0 && (
           <div className="mt-4">
             <h2 className="font-semibold">📊 Preview ({cases.length} rows)</h2>
