@@ -26,27 +26,23 @@ export async function GET(request: NextRequest) {
       const safeName = sanitizeName(name);
       const targetPath = `schemas/${safeName}.json`;
 
-      const blobs = await list({ prefix: "schemas/" });
-      const blob = blobs.blobs.find(b => b.pathname === targetPath);
-
-      if (!blob) {
-        return NextResponse.json(
-          { error: "Schema not found" },
-          { status: 404 }
-        );
-      }
-
-      const res = await fetch(blob.url, { cache: "no-store" });
-
-      if (!res.ok) {
-        return NextResponse.json(
-          { error: "Failed to fetch schema blob" },
-          { status: 500 }
-        );
-      }
-
-      const schema = await res.json();
-      return NextResponse.json(schema);
+        // Try to find the blob entry via the SDK list and fetch its URL
+        try {
+          const result = await list({ prefix: `schemas/${safeName}` });
+          const listArray = Array.isArray(result?.blobs) ? result.blobs : (Array.isArray(result) ? result : []);
+          const blobEntry = listArray[0];
+          const url = blobEntry?.url || blobEntry?.downloadUrl || null;
+          if (!url) {
+            return NextResponse.json({ error: "Schema not found" }, { status: 404 });
+          }
+          const res = await fetch(url, { cache: "no-store" });
+          if (!res.ok) return NextResponse.json({ error: "Schema not found" }, { status: 404 });
+          const schema = await res.json();
+          return NextResponse.json(schema);
+        } catch (err) {
+          console.warn("Error fetching single schema via blob list:", err);
+          return NextResponse.json({ error: "Schema not found" }, { status: 404 });
+        }
     }
 
     // ------------------------------
@@ -54,14 +50,26 @@ export async function GET(request: NextRequest) {
     // ------------------------------
     const blobs = await list({ prefix: "schemas/" });
 
-    const items = blobs.blobs.map(blob => ({
-      name: blob.pathname
-        .replace("schemas/", "")
-        .replace(/\.json$/, ""),
-      blobUrl: blob.url,
-      size: blob.size,
-      uploadedAt: blob.uploadedAt,
-    }));
+    const listArray = Array.isArray(blobs?.blobs) ? blobs.blobs : (Array.isArray(blobs) ? blobs : []);
+
+    const items = listArray.map((blob: any) => {
+      // blob path/name can be in different properties depending on provider response
+      const rawPath = blob.pathname || blob.path || blob.name || blob.key || blob.filename || null;
+      // Fallback: derive name from URL if nothing else
+      const urlFallback = blob.url || blob.downloadUrl || blob.href || null;
+      const fallbackPathFromUrl = urlFallback ? urlFallback.split("/").pop() : null;
+      const effectivePath = rawPath || fallbackPathFromUrl || "";
+
+      const name = effectivePath.replace(/^schemas\//, "").replace(/\.json$/, "");
+      const blobUrl = blob.url || blob.downloadUrl || blob.href || null;
+
+      return {
+        name,
+        blobUrl,
+        size: blob.size || blob.length || null,
+        uploadedAt: blob.uploadedAt || blob.createdAt || null,
+      };
+    });
 
     return NextResponse.json(items);
   } catch (error) {
