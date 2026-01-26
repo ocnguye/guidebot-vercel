@@ -69,16 +69,38 @@ export default function RadExtractPage() {
     try {
       const response = await fetch('/api/schemas')
       if (response.ok) {
-        const schemaNames = await response.json()
+        const data = await response.json()
+        
+        // ✅ Normalize the response to always be an array of strings
+        let schemaNames: string[] = [];
+        
+        if (Array.isArray(data)) {
+          schemaNames = data.map(item => {
+            if (typeof item === "string") {
+              return item;
+            } else if (item && typeof item === "object" && typeof item.name === "string") {
+              return item.name;
+            }
+            return null;
+          }).filter((name): name is string => {
+            return typeof name === "string" && name.trim().length > 0;
+          });
+        }
+        
+        console.log("✅ Loaded schema names:", schemaNames);
         setAvailableSchemas(schemaNames)
 
         // Fetch each schema's content
         const schemaEntries = await Promise.all(
           schemaNames.map(async (name: string) => {
-            const res = await fetch(`/api/schemas?name=${encodeURIComponent(name)}`);
-            if (res.ok) {
-              const schema = await res.json();
-              return [name, schema];
+            try {
+              const res = await fetch(`/api/schemas?name=${encodeURIComponent(name)}`);
+              if (res.ok) {
+                const schema = await res.json();
+                return [name, schema];
+              }
+            } catch (err) {
+              console.error(`Failed to load schema ${name}:`, err);
             }
             return [name, {}];
           })
@@ -287,11 +309,15 @@ export default function RadExtractPage() {
                   <Analyze
                     uploadedData={mapCaseDataToUploadedFiles(deidentifiedData)}
                     lastFileName={deidFileName}
-                    availableSchemas={availableSchemas.map(name => ({
-                      name,
-                      schema: schemasByName[name] || {},
-                      blobUrl: `/api/schemas/blob?name=${encodeURIComponent(name)}`
-                    }))}
+                    availableSchemas={availableSchemas.map(name => {
+                      // ✅ Extra safety: ensure name is a string
+                      const schemaName = typeof name === 'string' ? name : String(name);
+                      return {
+                        name: schemaName,
+                        schema: schemasByName[schemaName] || {},
+                        blobUrl: `/api/schemas/blob?name=${encodeURIComponent(schemaName)}`
+                      };
+                    })}
                     onProcessed={() => {}}
                     onExportMarked={(cases) => {
                       setMarkedCases(cases);

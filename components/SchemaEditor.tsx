@@ -33,9 +33,9 @@ export default function SchemaEditor({
   setSchema,
   uploadedCases = [],
 }: SchemaEditorProps) {
-  const [selectedSchemaName, setSelectedSchemaName] = useState("");
-  const [schemaName, setSchemaName] = useState("");
-  const [availableSchemas, setAvailableSchemas] = useState<Array<{ name: string; blobUrl?: string | null; blobId?: string | null; source?: string }>>([]);
+  const [selectedSchemaName, setSelectedSchemaName] = useState<string>("");
+  const [schemaName, setSchemaName] = useState<string>("");
+  const [availableSchemas, setAvailableSchemas] = useState<string[]>([]);
   const [newField, setNewField] = useState("");
   const [newType, setNewType] = useState<FieldType>("radio");
   const [newDescription, setNewDescription] = useState("");
@@ -50,38 +50,49 @@ export default function SchemaEditor({
 
   // Fetch available schemas on mount
   useEffect(() => {
-    fetch("/api/schemas")
-      .then(async (res) => {
-        if (!res.ok) throw new Error("Failed to list schemas");
-        return res.json();
-      })
-      .then((data) => {
-        let schemas: Array<{ name: string }> = [];
-
-        if (Array.isArray(data)) {
-          if (typeof data[0] === "string") {
-            schemas = data.map(n => ({ name: n }));
-          } else {
-            schemas = data;
-          }
-        }
-
-        // ✅ FILTER OUT BLANK / INVALID NAMES
-        schemas = schemas.filter(
-          s => typeof s.name === "string" && s.name.trim().length > 0
-        );
-
-        setAvailableSchemas(schemas);
-      })
-      .catch(err => {
-        console.error("Failed to fetch schemas", err);
-        setAvailableSchemas([]);
-      });
+    fetchAvailableSchemas();
   }, []);
 
-  // Load schema when schemaName changes and matches an existing schema
+  async function fetchAvailableSchemas() {
+    try {
+      const res = await fetch("/api/schemas");
+      if (!res.ok) throw new Error("Failed to list schemas");
+      
+      const data = await res.json();
+      
+      // Normalize the response to always be an array of strings
+      let schemaNames: string[] = [];
+      
+      if (Array.isArray(data)) {
+        schemaNames = data.map(item => {
+          if (typeof item === "string") {
+            return item;
+          } else if (item && typeof item === "object" && typeof item.name === "string") {
+            return item.name;
+          }
+          return null;
+        }).filter((name): name is string => {
+          return typeof name === "string" && name.trim().length > 0;
+        });
+      }
+      
+      setAvailableSchemas(schemaNames);
+    } catch (err) {
+      console.error("Failed to fetch schemas", err);
+      setAvailableSchemas([]);
+    }
+  }
+
+  // Load schema when selectedSchemaName changes
   useEffect(() => {
-    if (!selectedSchemaName) {
+    // Guard: ensure selectedSchemaName is a valid string
+    if (typeof selectedSchemaName !== "string") {
+      console.warn("selectedSchemaName is not a string:", selectedSchemaName);
+      setSelectedSchemaName("");
+      return;
+    }
+
+    if (!selectedSchemaName || selectedSchemaName.trim() === "") {
       // New schema mode
       setSchema({});
       setSchemaName("");
@@ -89,74 +100,85 @@ export default function SchemaEditor({
       return;
     }
 
-    fetch(`/api/schemas?name=${encodeURIComponent(selectedSchemaName)}`)
-      .then(async (res) => {
-        if (res.status === 404) {
-          setSchema({});
-          setSchemaName(selectedSchemaName);
-          setCollapsedFields({});
-          return null;
-        }
+    loadSchema(selectedSchemaName);
+  }, [selectedSchemaName]);
 
-        if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          throw new Error(text || "Failed to load schema");
-        }
+  async function loadSchema(name: string) {
+    try {
+      const res = await fetch(`/api/schemas?name=${encodeURIComponent(name)}`);
+      
+      if (res.status === 404) {
+        // Schema doesn't exist yet, prepare for new creation
+        setSchema({});
+        setSchemaName(name);
+        setCollapsedFields({});
+        return;
+      }
 
-        return res.json();
-      })
-      .then((data) => {
-        if (!data) return;
-        // ✅ NORMALIZE API RESPONSE HERE
-        let resolvedSchema: any = data.schema ?? data.fields ?? data;
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || "Failed to load schema");
+      }
 
-        // If the API returned a string, try to parse it
-        if (typeof resolvedSchema === "string") {
-          try {
-            resolvedSchema = JSON.parse(resolvedSchema);
-          } catch (e) {
-            console.warn("Schema response was string but JSON.parse failed", e);
-          }
-        }
+      const data = await res.json();
+      
+      // Normalize API response
+      let resolvedSchema: any = data.schema ?? data.fields ?? data;
 
-        // If the manifest/blob contains a top-level object keyed by the schema name
-        // e.g. { "CPAM": { ... } }, unwrap it.
-        if (
-          resolvedSchema &&
-          typeof resolvedSchema === "object" &&
-          !Array.isArray(resolvedSchema)
-        ) {
-          const keys = Object.keys(resolvedSchema);
-          if (
-            keys.length === 1 &&
-            selectedSchemaName &&
-            keys[0].toLowerCase().includes(selectedSchemaName.toLowerCase()) &&
-            typeof resolvedSchema[keys[0]] === "object"
-          ) {
-            resolvedSchema = resolvedSchema[keys[0]];
-          }
-        }
-
-        // Defensive: ensure object
-        if (typeof resolvedSchema !== "object" || Array.isArray(resolvedSchema) || resolvedSchema === null) {
-          console.error("Invalid schema shape returned from /api/schemas?name=", selectedSchemaName, data);
+      // If the API returned a string, try to parse it
+      if (typeof resolvedSchema === "string") {
+        try {
+          resolvedSchema = JSON.parse(resolvedSchema);
+        } catch (e) {
+          console.warn("Schema response was string but JSON.parse failed", e);
           setSchema({});
           return;
         }
+      }
 
-        console.debug("Loaded schema for", selectedSchemaName, resolvedSchema);
+      // If the manifest/blob contains a top-level object keyed by the schema name
+      // e.g. { "CPAM": { ... } }, unwrap it
+      if (
+        resolvedSchema &&
+        typeof resolvedSchema === "object" &&
+        !Array.isArray(resolvedSchema)
+      ) {
+        const keys = Object.keys(resolvedSchema);
+        if (
+          keys.length === 1 &&
+          name &&
+          keys[0].toLowerCase().includes(name.toLowerCase()) &&
+          typeof resolvedSchema[keys[0]] === "object"
+        ) {
+          resolvedSchema = resolvedSchema[keys[0]];
+        }
+      }
 
-        setSchema(resolvedSchema as Schema);
-        setSchemaName(selectedSchemaName);
-        setCollapsedFields({});
-      })
-      .catch((err) => {
-        console.error("Schema load error:", err);
-      });
-  }, [selectedSchemaName]);
+      // Defensive: ensure valid object
+      if (
+        typeof resolvedSchema !== "object" ||
+        Array.isArray(resolvedSchema) ||
+        resolvedSchema === null
+      ) {
+        console.error("Invalid schema shape returned from /api/schemas?name=", name, data);
+        setSchema({});
+        return;
+      }
+
+      console.debug("Loaded schema for", name, resolvedSchema);
+
+      setSchema(resolvedSchema as Schema);
+      setSchemaName(name);
+      setCollapsedFields({});
+    } catch (err) {
+      console.error("Schema load error:", err);
+      setSchema({});
+    }
+  }
 
   function addField() {
     if (!newField.trim() || schema[newField]) return;
+    
     setSchema({
       ...schema,
       [newField]: {
@@ -167,6 +189,7 @@ export default function SchemaEditor({
         description: newDescription,
       },
     });
+    
     setNewField("");
     setNewDescription("");
   }
@@ -175,6 +198,7 @@ export default function SchemaEditor({
     const copy = { ...schema };
     delete copy[field];
     setSchema(copy);
+    
     setCollapsedFields(prev => {
       const { [field]: _, ...rest } = prev;
       return rest;
@@ -213,20 +237,27 @@ export default function SchemaEditor({
       alert("Please enter a schema name.");
       return;
     }
+    
     setSaving(true);
-    const res = await fetch("/api/schemas", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: schemaName, schema }),
-    });
-    setSaving(false);
-    if (res.ok) {
-      alert("Schema saved!");
-      fetch("/api/schemas")
-        .then(res => res.json())
-        .then(setAvailableSchemas);
-    } else {
+    
+    try {
+      const res = await fetch("/api/schemas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: schemaName, schema }),
+      });
+      
+      if (res.ok) {
+        alert("Schema saved!");
+        await fetchAvailableSchemas();
+      } else {
+        alert("Failed to save schema.");
+      }
+    } catch (err) {
+      console.error("Save error:", err);
       alert("Failed to save schema.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -237,34 +268,40 @@ export default function SchemaEditor({
     }));
   }
 
-  // --- Schema Generation Integration (manual trigger) ---
   function parseFileAndStoreRows(file: File) {
     setGenMsg(null);
     setGenerating(false);
+    
     const reader = new FileReader();
+    
     reader.onload = (evt) => {
       try {
         const data = evt.target?.result;
         const workbook = XLSX.read(data, { type: "binary" });
         const sheetName = workbook.SheetNames[0];
         const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+        
         setParsedRows(rows);
         setGenMsg(`Parsed ${rows.length} rows. Ready to generate schema.`);
       } catch (err: any) {
+        console.error("Parse error:", err);
         setGenMsg("Failed to parse file for schema generation.");
         setParsedRows([]);
       }
     };
+    
     reader.onerror = () => {
       setGenMsg("Failed to read file.");
       setParsedRows([]);
     };
+    
     reader.readAsBinaryString(file);
   }
 
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     setDragActive(false);
+    
     const file = e.dataTransfer.files?.[0];
     if (file) {
       setUploadedFile(file);
@@ -292,11 +329,14 @@ export default function SchemaEditor({
 
   async function handleGenerateSchemaFromParsedRows() {
     setGenMsg(null);
+    
     if (!parsedRows || parsedRows.length === 0) {
       setGenMsg("No rows parsed from file.");
       return;
     }
+    
     setGenerating(true);
+    
     try {
       const res = await fetch("/api/generate-schema", {
         method: "POST",
@@ -305,19 +345,28 @@ export default function SchemaEditor({
           cases: parsedRows.slice(0, 20), // Limit for prompt size
         }),
       });
+      
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || "Failed to generate schema.");
       }
+      
       const data = await res.json();
       setSchema(data.schema);
       setGenMsg("✅ Schema generated from uploaded file!");
     } catch (err: any) {
+      console.error("Generation error:", err);
       setGenMsg(err.message || "Failed to generate schema.");
+    } finally {
+      setGenerating(false);
     }
-    setGenerating(false);
   }
-  // --- End Schema Generation Integration ---
+
+  function handleSchemaSelectChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const value = e.target.value;
+    console.log("Schema selected:", value, typeof value);
+    setSelectedSchemaName(value);
+  }
 
   return (
     <Card>
@@ -340,24 +389,25 @@ export default function SchemaEditor({
               <b>Options:</b> The selectable values for this field, if any.
             </li>
             <li>
-              <b>max_points:</b> Maximum number of choices allowed for this field. 
+              <b>max_points:</b> Maximum number of choices allowed for this field.
             </li>
             <li>
               <b>key_field:</b> Mark as a key field for grouping or identification.
             </li>
           </ul>
         </div>
+
         <div className="mb-6 flex flex-col md:flex-row md:items-center gap-2">
           <label className="text-xs font-semibold md:w-32">Schema Name:</label>
           <select
-            value={selectedSchemaName}
-            onChange={e => setSelectedSchemaName(e.target.value)}
+            value={typeof selectedSchemaName === "string" ? selectedSchemaName : ""}
+            onChange={handleSchemaSelectChange}
             className="border rounded px-2 py-1 w-full md:w-1/2"
           >
             <option value="">-- New Schema --</option>
-            {availableSchemas.map(s => (
-              <option key={s.name} value={s.name}>
-                {s.name}
+            {availableSchemas.map(name => (
+              <option key={name} value={name}>
+                {name}
               </option>
             ))}
           </select>
@@ -368,6 +418,7 @@ export default function SchemaEditor({
             className="w-full md:w-1/2"
           />
         </div>
+
         {/* Schema Generation Section */}
         <div className="mb-6">
           <div className="font-semibold mb-2">Generate Schema from Uploaded File</div>
@@ -400,11 +451,13 @@ export default function SchemaEditor({
               </div>
             ) : (
               <span className="text-gray-600">
-                Drag & drop your Excel or CSV file here, or <span className="underline text-blue-600">click to select</span>
+                Drag & drop your Excel or CSV file here, or{" "}
+                <span className="underline text-blue-600">click to select</span>
               </span>
             )}
             <div className="text-xs text-gray-400 mt-1">Accepted: .xlsx, .xls, .csv</div>
           </div>
+          
           <div className="flex items-center gap-2 mt-3">
             <Button
               type="button"
@@ -415,15 +468,19 @@ export default function SchemaEditor({
               Generate Schema
             </Button>
           </div>
+          
           <div className="text-xs mt-2 text-gray-500">
             This will use the GPT4 model and up to 20 rows from the uploaded file to suggest a schema.
           </div>
+          
           {genMsg && (
             <div className={`mt-2 text-sm ${genMsg.startsWith("✅") ? "text-green-700" : "text-red-700"}`}>
               {genMsg}
             </div>
           )}
         </div>
+
+        {/* Existing Fields */}
         {Object.entries(schema).map(([field, def]) => (
           <div key={field} className="border rounded p-3 mb-4 bg-gray-50">
             <div className="flex items-center justify-between">
@@ -447,6 +504,7 @@ export default function SchemaEditor({
                 Remove
               </Button>
             </div>
+            
             {!collapsedFields[field] && (
               <>
                 <div className="flex flex-col md:flex-row md:items-center gap-2 mt-2">
@@ -465,6 +523,7 @@ export default function SchemaEditor({
                     className="w-full md:w-1/4"
                     placeholder="Field name"
                   />
+                  
                   <div className="flex items-center gap-2">
                     <label className="text-xs font-semibold">Type:</label>
                     <select
@@ -478,6 +537,7 @@ export default function SchemaEditor({
                       <option value="list">list (multiple choice)</option>
                     </select>
                   </div>
+                  
                   <div className="flex items-center gap-2">
                     <label className="text-xs font-semibold">max_points:</label>
                     <Input
@@ -495,6 +555,7 @@ export default function SchemaEditor({
                       <span className="text-xs text-gray-500">(always 1 for radio)</span>
                     )}
                   </div>
+                  
                   <div className="flex items-center gap-2">
                     <label className="text-xs font-semibold">key_field:</label>
                     <input
@@ -507,6 +568,7 @@ export default function SchemaEditor({
                     />
                   </div>
                 </div>
+                
                 <div className="mt-2 flex flex-col md:flex-row md:items-center gap-2">
                   <label className="text-xs font-semibold md:w-24">Description:</label>
                   <Input
@@ -516,6 +578,7 @@ export default function SchemaEditor({
                     placeholder="add a description (optional)"
                   />
                 </div>
+                
                 <div className="mt-3">
                   <div className="font-semibold text-xs mb-1">Options:</div>
                   {(def.options || []).map((opt, idx) => (
@@ -550,6 +613,8 @@ export default function SchemaEditor({
             )}
           </div>
         ))}
+
+        {/* Add New Field */}
         <div className="flex flex-col md:flex-row gap-2 mt-4 items-center">
           <Input
             value={newField}
@@ -575,6 +640,8 @@ export default function SchemaEditor({
             Add Field
           </Button>
         </div>
+
+        {/* Save Button */}
         <Button
           className="mt-6"
           variant="default"
