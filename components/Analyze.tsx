@@ -22,6 +22,7 @@ interface SchemaField {
 interface SchemaBlob {
   name: string;
   blobUrl: string;
+  schema?: Record<string, SchemaField>; // ✅ Add optional schema property
 }
 
 interface AnalyzeProps {
@@ -44,9 +45,13 @@ export default function Analyze({
   const normalizedSchemas = useMemo<SchemaBlob[]>(() => {
     return availableSchemas
       .map((s: any) => {
-        // Correct blob shape
+        // Correct blob shape with schema
         if (typeof s?.name === "string" && typeof s?.blobUrl === "string") {
-          return { name: s.name, blobUrl: s.blobUrl };
+          return { 
+            name: s.name, 
+            blobUrl: s.blobUrl,
+            schema: s.schema // ✅ Preserve schema if provided
+          };
         }
 
         // Double-wrapped blob object (buggy upstream case)
@@ -55,7 +60,11 @@ export default function Analyze({
           typeof s.name?.name === "string" &&
           typeof s.name?.blobUrl === "string"
         ) {
-          return { name: s.name.name, blobUrl: s.name.blobUrl };
+          return { 
+            name: s.name.name, 
+            blobUrl: s.name.blobUrl,
+            schema: s.name.schema // ✅ Preserve schema if provided
+          };
         }
 
         return null;
@@ -106,7 +115,7 @@ export default function Analyze({
     }
   }, [lastFileName, uploadedData]);
 
-  // Fetch selected schema JSON from blob
+  // Fetch selected schema JSON from blob (or use passed schema)
   useEffect(() => {
     if (!selectedSchemaName) {
       setSelectedSchemaObj({});
@@ -122,6 +131,30 @@ export default function Analyze({
       return;
     }
 
+    // ✅ If schema is already provided, use it directly
+    if (schemaBlob.schema && typeof schemaBlob.schema === 'object') {
+      console.log("✅ Using pre-loaded schema for", selectedSchemaName);
+      
+      // Handle nested schema format
+      let resolvedSchema = schemaBlob.schema;
+      const keys = Object.keys(resolvedSchema);
+      
+      // Check if schema is wrapped in a name key
+      if (
+        keys.length === 1 &&
+        selectedSchemaName &&
+        keys[0].toLowerCase().includes(selectedSchemaName.toLowerCase()) &&
+        typeof resolvedSchema[keys[0]] === "object"
+      ) {
+        resolvedSchema = resolvedSchema[keys[0]];
+      }
+      
+      setSelectedSchemaObj(resolvedSchema);
+      return;
+    }
+
+    // ✅ Otherwise, fetch from blobUrl
+    console.log("📥 Fetching schema from API for", selectedSchemaName);
     (async () => {
       try {
         const res = await fetch(schemaBlob.blobUrl);
@@ -136,7 +169,28 @@ export default function Analyze({
         }
 
         const json = await res.json();
-        setSelectedSchemaObj(json.schema ?? json ?? {});
+        
+        // Handle different response formats from /api/schemas
+        let resolvedSchema = json.schema ?? json.fields ?? json;
+        
+        // If response is wrapped in schema name key
+        if (
+          resolvedSchema &&
+          typeof resolvedSchema === "object" &&
+          !Array.isArray(resolvedSchema)
+        ) {
+          const keys = Object.keys(resolvedSchema);
+          if (
+            keys.length === 1 &&
+            selectedSchemaName &&
+            keys[0].toLowerCase().includes(selectedSchemaName.toLowerCase()) &&
+            typeof resolvedSchema[keys[0]] === "object"
+          ) {
+            resolvedSchema = resolvedSchema[keys[0]];
+          }
+        }
+        
+        setSelectedSchemaObj(resolvedSchema || {});
       } catch (err) {
         console.error("Error fetching schema blob", err);
         setSelectedSchemaObj({});
@@ -235,6 +289,30 @@ export default function Analyze({
       return copy;
     });
   };
+
+  const toggleSelectAll = () => {
+    const filteredAccessions = filtered.map((c) => c.AccessionNumber);
+    const allSelected = filteredAccessions.every((acc) =>
+      markedCases.has(acc)
+    );
+
+    setMarkedCases((prev) => {
+      const copy = new Set(prev);
+      if (allSelected) {
+        // Deselect all filtered cases
+        filteredAccessions.forEach((acc) => copy.delete(acc));
+      } else {
+        // Select all filtered cases
+        filteredAccessions.forEach((acc) => copy.add(acc));
+      }
+      return copy;
+    });
+  };
+
+  const allFilteredSelected = useMemo(() => {
+    if (filtered.length === 0) return false;
+    return filtered.every((c) => markedCases.has(c.AccessionNumber));
+  }, [filtered, markedCases]);
 
   /* ---------------- Analytics ---------------- */
 
@@ -478,7 +556,18 @@ return (
         <table className="border mt-2 w-full text-sm">
           <thead>
             <tr>
-              <th className="border px-2 py-1">Mark</th>
+              <th className="border px-2 py-1">
+                <div className="flex flex-col items-center gap-1">
+                  <input
+                    type="checkbox"
+                    checked={allFilteredSelected}
+                    onChange={toggleSelectAll}
+                    disabled={filtered.length === 0}
+                    title={allFilteredSelected ? "Deselect All" : "Select All"}
+                  />
+                  <span className="text-xs">All</span>
+                </div>
+              </th>
               <th className="border px-2 py-1">AccessionNumber</th>
               <th className="border px-2 py-1">Completion %</th>
               <th className="border px-2 py-1">Pathology</th>

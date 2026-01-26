@@ -312,10 +312,12 @@ export default function RadExtractPage() {
                     availableSchemas={availableSchemas.map(name => {
                       // ✅ Extra safety: ensure name is a string
                       const schemaName = typeof name === 'string' ? name : String(name);
+                      // ✅ Pass the already-loaded schema directly
                       return {
                         name: schemaName,
                         schema: schemasByName[schemaName] || {},
-                        blobUrl: `/api/schemas/blob?name=${encodeURIComponent(schemaName)}`
+                        // Still provide blobUrl for backwards compatibility if needed
+                        blobUrl: `/api/schemas?name=${encodeURIComponent(schemaName)}`
                       };
                     })}
                     onProcessed={() => {}}

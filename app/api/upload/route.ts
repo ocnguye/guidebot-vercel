@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     const payload = Buffer.concat([iv, authTag, encrypted]);
 
     // Upload encrypted payload to Vercel Blob
-  const { url } = await put(fileKey, payload, { access: "public", contentType: "application/octet-stream" });
+  const { url } = await put(fileKey, payload, { access: "public", contentType: "application/octet-stream", allowOverwrite: true });
 
     // Return success and cases; note we do not expose the encryption key. Consumers that need
     // to download & decrypt must be server-side (have UPLOAD_ENCRYPTION_KEY) or you can implement
